@@ -55,6 +55,8 @@ class LiteLLMProvider(LLMProvider):
                 os.environ.setdefault("ZHIPUAI_API_KEY", api_key)
             elif "groq" in default_model:
                 os.environ.setdefault("GROQ_API_KEY", api_key)
+            elif "minimax" in default_model.lower():
+                os.environ.setdefault("MINIMAX_API_KEY", api_key)
         
         if api_base:
             litellm.api_base = api_base
@@ -99,8 +101,9 @@ class LiteLLMProvider(LLMProvider):
             model = f"zai/{model}"
         
         # For vLLM, use hosted_vllm/ prefix per LiteLLM docs
+        # NOTE: MiniMax OpenAI-compatible endpoints are NOT vLLM, do not apply this prefix.
         # Convert openai/ prefix to hosted_vllm/ if user specified it
-        if self.is_vllm:
+        if self.is_vllm and not (self.api_base and "minimaxi.com" in self.api_base):
             model = f"hosted_vllm/{model}"
         
         # For Gemini, ensure gemini/ prefix if not already present
@@ -114,9 +117,12 @@ class LiteLLMProvider(LLMProvider):
             "temperature": temperature,
         }
         
-        # Pass api_base directly for custom endpoints (vLLM, etc.)
+        # Pass base_url/api_key explicitly to avoid relying on env / provider inference
         if self.api_base:
-            kwargs["api_base"] = self.api_base
+            # LiteLLM uses `base_url` / `api_base` depending on version; 1.81.8 accepts `base_url`.
+            kwargs["base_url"] = self.api_base
+        if self.api_key:
+            kwargs["api_key"] = self.api_key
         
         if tools:
             kwargs["tools"] = tools
