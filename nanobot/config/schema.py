@@ -30,11 +30,21 @@ class FeishuConfig(BaseModel):
     allow_from: list[str] = Field(default_factory=list)  # Allowed user open_ids
 
 
+class WebConfig(BaseModel):
+    """Web channel configuration for browser-based chat interface."""
+    enabled: bool = True  # Enabled by default for convenience
+    host: str = "0.0.0.0"  # Host to bind the web server
+    port: int = 18790  # Port for the web server
+    allowed_origins: list[str] = Field(default_factory=lambda: ["http://localhost:18790", "http://127.0.0.1:18790"])
+    title: str = "nanobot"  # Page title
+
+
 class ChannelsConfig(BaseModel):
     """Configuration for chat channels."""
     whatsapp: WhatsAppConfig = Field(default_factory=WhatsAppConfig)
     telegram: TelegramConfig = Field(default_factory=TelegramConfig)
     feishu: FeishuConfig = Field(default_factory=FeishuConfig)
+    web: WebConfig = Field(default_factory=WebConfig)
 
 
 class AgentDefaults(BaseModel):

@@ -277,6 +277,80 @@ def gateway(
 
 
 # ============================================================================
+# Web Interface Command
+# ============================================================================
+
+
+@app.command()
+def web(
+    port: int = typer.Option(18790, "--port", "-p", help="Web server port"),
+    host: str = typer.Option("0.0.0.0", "--host", "-h", help="Web server host"),
+):
+    """Start the nanobot web interface."""
+    from nanobot.config.loader import load_config
+    from nanobot.bus.queue import MessageBus
+    from nanobot.providers.litellm_provider import LiteLLMProvider
+    from nanobot.agent.loop import AgentLoop
+    from nanobot.channels.web import WebChannel
+    from nanobot.session.manager import SessionManager
+
+    config = load_config()
+
+    # Override config with CLI args
+    config.channels.web.port = port
+    config.channels.web.host = host
+
+    api_key = config.get_api_key()
+    api_base = config.get_api_base()
+    model = config.agents.defaults.model
+    is_bedrock = model.startswith("bedrock/")
+
+    if not api_key and not is_bedrock:
+        console.print("[red]Error: No API key configured.[/red]")
+        console.print("Set one in ~/.nanobot/config.json under providers.openrouter.apiKey")
+        raise typer.Exit(1)
+
+    bus = MessageBus()
+    provider = LiteLLMProvider(
+        api_key=api_key,
+        api_base=api_base,
+        default_model=config.agents.defaults.model
+    )
+
+    agent = AgentLoop(
+        bus=bus,
+        provider=provider,
+        workspace=config.workspace_path,
+        model=config.agents.defaults.model,
+        max_iterations=config.agents.defaults.max_tool_iterations,
+        brave_api_key=config.tools.web.search.api_key or None,
+        exec_config=config.tools.exec,
+    )
+
+    session_manager = SessionManager(config.workspace_path)
+
+    web_channel = WebChannel(
+        config=config.channels.web,
+        bus=bus,
+        agent=agent,
+        session_manager=session_manager,
+    )
+
+    console.print(f"{__logo__} Starting web interface...")
+    console.print(f"[green]✓[/green] Open http://{host}:{port} in your browser")
+    console.print("[dim]Press Ctrl+C to stop[/dim]\n")
+
+    async def run():
+        try:
+            await web_channel.start()
+        except KeyboardInterrupt:
+            console.print("\nShutting down...")
+            await web_channel.stop()
+
+    asyncio.run(run())
+
+
+# ============================================================================
 # Agent Commands
 # ============================================================================
 

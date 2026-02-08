@@ -14,19 +14,21 @@ from nanobot.config.schema import Config
 class ChannelManager:
     """
     Manages chat channels and coordinates message routing.
-    
+
     Responsibilities:
     - Initialize enabled channels (Telegram, WhatsApp, etc.)
     - Start/stop channels
     - Route outbound messages
     """
-    
-    def __init__(self, config: Config, bus: MessageBus):
+
+    def __init__(self, config: Config, bus: MessageBus, agent: Any = None, session_manager: Any = None):
         self.config = config
         self.bus = bus
+        self.agent = agent
+        self.session_manager = session_manager
         self.channels: dict[str, BaseChannel] = {}
         self._dispatch_task: asyncio.Task | None = None
-        
+
         self._init_channels()
     
     def _init_channels(self) -> None:
@@ -66,7 +68,21 @@ class ChannelManager:
                 logger.info("Feishu channel enabled")
             except ImportError as e:
                 logger.warning(f"Feishu channel not available: {e}")
-    
+
+        # Web channel
+        if self.config.channels.web.enabled:
+            try:
+                from nanobot.channels.web import WebChannel
+                self.channels["web"] = WebChannel(
+                    self.config.channels.web,
+                    self.bus,
+                    agent=self.agent,
+                    session_manager=self.session_manager,
+                )
+                logger.info("Web channel enabled")
+            except ImportError as e:
+                logger.warning(f"Web channel not available: {e}")
+
     async def start_all(self) -> None:
         """Start WhatsApp channel and the outbound dispatcher."""
         if not self.channels:
