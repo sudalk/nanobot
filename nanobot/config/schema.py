@@ -103,10 +103,20 @@ class ExecToolConfig(BaseModel):
     restrict_to_workspace: bool = False  # If true, block commands accessing paths outside workspace
 
 
+class LocalWhisperConfig(BaseModel):
+    """Local Whisper ASR configuration."""
+    enabled: bool = False  # Enable local Whisper ASR
+    model: str = "base"  # Model size: tiny, base, small, medium, large
+    device: str = "auto"  # Device: auto, cpu, cuda
+    compute_type: str = "int8"  # Compute type: int8, float16, float32
+    language: str = "auto"  # Default language: auto, zh, en, ja, etc.
+
+
 class ToolsConfig(BaseModel):
     """Tools configuration."""
     web: WebToolsConfig = Field(default_factory=WebToolsConfig)
     exec: ExecToolConfig = Field(default_factory=ExecToolConfig)
+    local_whisper: LocalWhisperConfig = Field(default_factory=LocalWhisperConfig)
 
 
 class Config(BaseSettings):
