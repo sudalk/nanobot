@@ -1,0 +1,67 @@
+# Bilibili Audio Extractor Configuration
+
+# Default settings for audio extraction
+{
+  "default_format": "mp3",
+  "default_quality": "high",
+  "output_directory": "~/Downloads/Bilibili_Audio",
+  "temp_directory": "/tmp/bilibili_audio",
+  
+  # Batch processing settings
+  "max_concurrent_downloads": 2,
+  "delay_between_downloads": 2.0,
+  "retry_attempts": 3,
+  "timeout_seconds": 300,
+  
+  # File naming settings
+  "filename_template": "{index:03d}_{sanitized_title}.{format}",
+  "max_filename_length": 50,
+  "include_video_info": true,
+  
+  # Quality settings per format
+  "quality_settings": {
+    "mp3": {
+      "high": "320k",
+      "medium": "192k", 
+      "low": "128k"
+    },
+    "m4a": {
+      "high": "320k",
+      "medium": "192k",
+      "low": "128k"
+    },
+    "wav": {
+      "high": "Lossless",
+      "medium": "Lossless",
+      "low": "Lossless"
+    },
+    "flac": {
+      "high": "Lossless",
+      "medium": "Lossless", 
+      "low": "Lossless"
+    }
+  },
+  
+  # Supported URL patterns
+  "supported_url_patterns": [
+    "https://www.bilibili.com/video/*",
+    "https://b23.tv/*",
+    "https://www.bilibili.com/blackboard/topic/list"
+  ],
+  
+  # Cleanup settings
+  "auto_cleanup_temp_files": true,
+  "cleanup_on_startup": false,
+  "max_temp_file_age_hours": 24,
+  
+  # User interface settings
+  "show_progress": true,
+  "verbose_output": false,
+  "confirm_before_download": false,
+  
+  # Logging settings
+  "log_level": "INFO",
+  "log_file": "bilibili_extractor.log",
+  "log_max_size_mb": 10,
+  "log_backup_count": 5
+}

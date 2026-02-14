@@ -1,0 +1,44 @@
+{
+  "playlist_name": "My Bilibili Audio Collection",
+  "description": "Educational videos and podcasts for offline listening",
+  "created_date": "2024-01-15",
+  "total_videos": 0,
+  "settings": {
+    "audio_format": "mp3",
+    "quality": "high",
+    "output_directory": "~/Downloads/Bilibili_Audio",
+    "filename_template": "{index:03d}_{title}.{format}"
+  },
+  "videos": [
+    {
+      "url": "https://www.bilibili.com/video/BV1xx411c7mD",
+      "title": "Python Programming Tutorial",
+      "description": "Learn Python from scratch",
+      "expected_duration": 3600,
+      "tags": ["programming", "tutorial", "python"],
+      "priority": "high"
+    },
+    {
+      "url": "https://www.bilibili.com/video/BV2xx411c8mD", 
+      "title": "Data Science Fundamentals",
+      "description": "Introduction to data science concepts",
+      "expected_duration": 2700,
+      "tags": ["data science", "tutorial"],
+      "priority": "medium"
+    },
+    {
+      "url": "https://b23.tv/abc123",
+      "title": "Podcast Episode 1",
+      "description": "Weekly tech podcast episode",
+      "expected_duration": 1800,
+      "tags": ["podcast", "tech"],
+      "priority": "high"
+    }
+  ],
+  "metadata": {
+    "source": "Manual curation",
+    "intended_use": "Educational and personal listening",
+    "backup_location": "Cloud storage",
+    "notes": "These are publicly available educational and entertainment videos"
+  }
+}

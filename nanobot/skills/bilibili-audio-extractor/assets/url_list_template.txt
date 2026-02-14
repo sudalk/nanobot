@@ -1,0 +1,28 @@
+# Bilibili Audio Extraction URL List
+# 
+# This file contains Bilibili video URLs for batch audio extraction.
+# Each line should contain one video URL.
+# 
+# Supported formats:
+# - https://www.bilibili.com/video/BVxxxxxxxx
+# - https://b23.tv/xxxxxxxx
+#
+# Lines starting with # are comments and will be ignored.
+# Empty lines are also ignored.
+
+# Example educational videos
+https://www.bilibili.com/video/BV1xx411c7mD
+https://www.bilibili.com/video/BV2xx411c8mD
+https://www.bilibili.com/video/BV3xx411c9mD
+
+# Example playlist URLs (these will be expanded by the batch processor)
+https://www.bilibili.com/video/BV1xx411c7mD
+https://www.bilibili.com/video/BV1xx411c8mD
+
+# Example short links
+https://b23.tv/abc123
+https://b23.tv/def456
+
+# Add your video URLs below this line
+# https://www.bilibili.com/video/BVxxxxxxxx
+# https://b23.tv/xxxxxxxx
