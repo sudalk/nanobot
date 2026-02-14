@@ -40,6 +40,13 @@ nanobot status
 echo "=================================="
 echo ""
 
+# 检查 MCP 配置
+if [ -f "$CONFIG_FILE" ]; then
+    if grep -q '"mcp"' "$CONFIG_FILE" 2>/dev/null || grep -q '"minimax"' "$CONFIG_FILE" 2>/dev/null; then
+        echo "✓ MCP 配置已启用"
+    fi
+fi
+
 # 启动 web 服务（默认端口 18790）
 PORT="${1:-18790}"
 HOST="${2:-0.0.0.0}"

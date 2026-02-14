@@ -112,11 +112,22 @@ class LocalWhisperConfig(BaseModel):
     language: str = "auto"  # Default language: auto, zh, en, ja, etc.
 
 
+class MCPConfig(BaseModel):
+    """MCP (Model Context Protocol) configuration."""
+    enabled: bool = False
+    command: str = ""  # e.g., "uvx"
+    args: list[str] = Field(default_factory=list)  # e.g., ["minimax-coding-plan-mcp", "-y"]
+    env: dict[str, str] = Field(default_factory=dict)  # Environment variables
+    tool_name: str | None = None  # Specific tool name from MCP server (optional)
+    alias: str = "mcp"  # Tool name alias in nanobot
+
+
 class ToolsConfig(BaseModel):
     """Tools configuration."""
     web: WebToolsConfig = Field(default_factory=WebToolsConfig)
     exec: ExecToolConfig = Field(default_factory=ExecToolConfig)
     local_whisper: LocalWhisperConfig = Field(default_factory=LocalWhisperConfig)
+    mcp: MCPConfig = Field(default_factory=MCPConfig)
 
 
 class Config(BaseSettings):

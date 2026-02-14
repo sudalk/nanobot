@@ -18,6 +18,7 @@ from nanobot.agent.tools.web import WebSearchTool, WebFetchTool
 from nanobot.agent.tools.message import MessageTool
 from nanobot.agent.tools.spawn import SpawnTool
 from nanobot.agent.tools.cron import CronTool
+from nanobot.agent.tools.mcp import MCPTool, MiniMaxMCPTool, discover_mcp_tools
 from nanobot.agent.subagent import SubagentManager
 from nanobot.session.manager import SessionManager
 
@@ -101,7 +102,100 @@ class AgentLoop:
         # Cron tool (for scheduling)
         if self.cron_service:
             self.tools.register(CronTool(self.cron_service))
-    
+
+        # MCP tools (for external MCP servers)
+        self._register_mcp_tools()
+
+    def _register_mcp_tools(self) -> None:
+        """Register MCP tools from configuration."""
+        from nanobot.config.loader import load_config
+
+        try:
+            config = load_config()
+            mcp_config = config.tools.mcp
+
+            # Check if MiniMax is configured via provider (auto-enable MCP)
+            if config.providers.minimax.api_key:
+                logger.info("Discovering MiniMax MCP tools...")
+
+                # Build environment for MiniMax
+                env = {
+                    "MINIMAX_API_KEY": config.providers.minimax.api_key,
+                }
+                if config.providers.minimax.api_base:
+                    # Remove trailing /v1 if present to avoid duplicate version in URL
+                    api_host = config.providers.minimax.api_base.rstrip('/')
+                    if api_host.endswith('/v1'):
+                        api_host = api_host[:-3]
+                    env["MINIMAX_API_HOST"] = api_host
+
+                # Discover available tools from MCP server
+                # Use direct command if available, fallback to uvx
+                mcp_tools = discover_mcp_tools(
+                    command="minimax-coding-plan-mcp",
+                    args=[],
+                    env=env,
+                )
+
+                if mcp_tools:
+                    logger.info(f"Registering {len(mcp_tools)} MiniMax MCP tool(s)")
+                    for tool_def in mcp_tools:
+                        tool_name = tool_def.get("name", "unknown")
+                        self.tools.register(MCPTool(
+                            name=f"minimax_{tool_name}",
+                            command="minimax-coding-plan-mcp",
+                            args=[],
+                            env=env,
+                            tool_name=tool_name,
+                            tool_schema=tool_def,
+                        ))
+                else:
+                    # Fallback: register a single generic minimax tool
+                    logger.info("Failed to discover MiniMax tools, registering generic tool")
+                    self.tools.register(MiniMaxMCPTool(
+                        api_key=config.providers.minimax.api_key,
+                        api_base=config.providers.minimax.api_base,
+                    ))
+                return
+
+            # Explicit MCP configuration (requires enabled=True)
+            if not mcp_config.enabled:
+                return
+
+            if mcp_config.command:
+                logger.info(f"Discovering MCP tools from {mcp_config.command}...")
+
+                # Discover available tools
+                mcp_tools = discover_mcp_tools(
+                    command=mcp_config.command,
+                    args=mcp_config.args,
+                    env=mcp_config.env,
+                )
+
+                if mcp_tools:
+                    logger.info(f"Registering {len(mcp_tools)} MCP tool(s)")
+                    for tool_def in mcp_tools:
+                        tool_name = tool_def.get("name", "unknown")
+                        self.tools.register(MCPTool(
+                            name=f"{mcp_config.alias}_{tool_name}",
+                            command=mcp_config.command,
+                            args=mcp_config.args,
+                            env=mcp_config.env,
+                            tool_name=tool_name,
+                        ))
+                else:
+                    # Fallback: register a single generic tool
+                    logger.info(f"Registering MCP tool: {mcp_config.alias}")
+                    self.tools.register(MCPTool(
+                        name=mcp_config.alias,
+                        command=mcp_config.command,
+                        args=mcp_config.args,
+                        env=mcp_config.env,
+                        tool_name=mcp_config.tool_name,
+                    ))
+        except Exception as e:
+            logger.warning(f"Failed to register MCP tools: {e}")
+
     async def run(self) -> None:
         """Run the agent loop, processing messages from the bus."""
         self._running = True

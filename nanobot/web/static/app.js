@@ -378,7 +378,7 @@ function handleChunk(content) {
         });
     }
 
-    scrollToBottom();
+    scrollToBottom(true);  // 强制滚动到底部
 }
 
 function handleComplete(fullResponse) {
@@ -532,6 +532,7 @@ function sendMessage() {
 
     // Add user message
     appendMessage('user', content, true);
+    scrollToBottom(true);  // 强制滚动到底部
 
     // Send via WebSocket
     if (state.isConnected) {
