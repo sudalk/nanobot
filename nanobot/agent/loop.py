@@ -268,6 +268,61 @@ class AgentLoop:
         if exec_tool and hasattr(exec_tool, 'set_context'):
             exec_tool.set_context(msg.channel, msg.chat_id)
         
+        # Check if message contains images - auto-route to minimax_understand_image
+        if msg.media and self.tools.has("minimax_understand_image"):
+            logger.info(f"[AgentLoop] Auto-routing image to minimax_understand_image")
+            # Build context with image
+            image_data = msg.media[0] if msg.media else None
+            if image_data:
+                try:
+                    # Prepare image_source parameter (base64 or URL)
+                    if image_data.startswith("data:"):
+                        # For base64 data, pass directly
+                        image_source = image_data
+                    else:
+                        # For URLs, pass as-is
+                        image_source = image_data
+
+                    result = await self.tools.execute("minimax_understand_image", {
+                        "prompt": msg.content or "描述这张图片",
+                        "image_source": image_source
+                    })
+                    # Save result to session and return
+                    session.add_message("user", f"[图片] {msg.content}" if msg.content else "[图片]")
+                    session.add_message("assistant", result)
+                    self.sessions.save(session)
+                    return OutboundMessage(
+                        channel=msg.channel,
+                        chat_id=msg.chat_id,
+                        content=result
+                    )
+                except Exception as e:
+                    logger.error(f"[AgentLoop] minimax_understand_image failed: {e}")
+                    # Fall through to normal processing
+
+        # Check if message looks like a search query - auto-route to minimax_web_search
+        search_keywords = ["搜索", "查找", "查询", "最新", "新闻", "search", "find", "look up", "latest"]
+        is_search_query = any(kw in msg.content.lower() for kw in search_keywords)
+
+        if is_search_query and self.tools.has("minimax_web_search"):
+            logger.info(f"[AgentLoop] Auto-routing search query to minimax_web_search")
+            try:
+                result = await self.tools.execute("minimax_web_search", {
+                    "query": msg.content
+                })
+                # Save result to session and return
+                session.add_message("user", msg.content)
+                session.add_message("assistant", result)
+                self.sessions.save(session)
+                return OutboundMessage(
+                    channel=msg.channel,
+                    chat_id=msg.chat_id,
+                    content=result
+                )
+            except Exception as e:
+                logger.error(f"[AgentLoop] minimax_web_search failed: {e}")
+                # Fall through to normal processing
+
         # Build initial messages (use get_history for LLM-formatted messages)
         messages = self.context.build_messages(
             history=session.get_history(),
@@ -276,7 +331,7 @@ class AgentLoop:
             channel=msg.channel,
             chat_id=msg.chat_id,
         )
-        
+
         # Agent loop
         iteration = 0
         final_content = None
@@ -445,16 +500,18 @@ class AgentLoop:
         session_key: str = "cli:direct",
         channel: str = "cli",
         chat_id: str = "direct",
+        media: list[str] | None = None,
     ) -> str:
         """
         Process a message directly (for CLI or cron usage).
-        
+
         Args:
             content: The message content.
             session_key: Session identifier.
             channel: Source channel (for context).
             chat_id: Source chat ID (for context).
-        
+            media: Optional list of media URLs or base64 data.
+
         Returns:
             The agent's response.
         """
@@ -462,8 +519,9 @@ class AgentLoop:
             channel=channel,
             sender_id="user",
             chat_id=chat_id,
-            content=content
+            content=content,
+            media=media or [],
         )
-        
+
         response = await self._process_message(msg)
         return response.content if response else ""

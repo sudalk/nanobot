@@ -379,12 +379,16 @@ class WebChannel(BaseChannel):
             return
 
         message = data.get("message", "")
+        image = data.get("image")  # Base64 encoded image
         session_id = data.get("session_id") or str(uuid.uuid4())[:8]
         session_key = f"web:{session_id}"
 
         logger.info(f"[WebChannel] Processing message for session {session_key}: {message[:50]}...")
+        if image:
+            logger.info(f"[WebChannel] Message includes image ({len(image)} chars)")
 
-        if not message:
+        # Allow empty message if there's an image
+        if not message and not image:
             await websocket.send_json(
                 {"type": "error", "message": "Empty message"}
             )
@@ -404,11 +408,19 @@ class WebChannel(BaseChannel):
         try:
             # Process message through agent
             logger.info(f"[WebChannel] Calling agent.process_direct for session {session_key}")
+
+            # Prepare media/images for the agent
+            media = []
+            if image:
+                # Store image temporarily and get a URL, or pass as base64 in metadata
+                media.append(image)  # Base64 data URL
+
             response = await self.agent.process_direct(
-                content=message,
+                content=message or "[图片]",  # Use placeholder if only image
                 session_key=session_key,
                 channel="web",
                 chat_id=session_id,
+                media=media if media else None,
             )
             logger.info(f"[WebChannel] Got response from agent: {response[:50]}...")
 

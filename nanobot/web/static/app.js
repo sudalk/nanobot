@@ -14,6 +14,7 @@ const state = {
     currentMessageElement: null,
     accumulatedResponse: '',
     tasks: new Map(), // Track active tasks
+    currentImage: null, // Current selected image (base64)
 };
 
 // DOM Elements
@@ -31,6 +32,12 @@ const elements = {
     welcomeMessage: document.getElementById('welcomeMessage'),
     messageInput: document.getElementById('messageInput'),
     sendBtn: document.getElementById('sendBtn'),
+    uploadBtn: document.getElementById('uploadBtn'),
+    imageInput: document.getElementById('imageInput'),
+    imagePreviewContainer: document.getElementById('imagePreviewContainer'),
+    imagePreview: document.getElementById('imagePreview'),
+    previewImg: document.getElementById('previewImg'),
+    removeImageBtn: document.getElementById('removeImageBtn'),
 };
 
 // Initialize the app
@@ -504,9 +511,12 @@ function sendMessage() {
     console.log('[nanobot] sendMessage called');
 
     const content = elements.messageInput.value.trim();
-    console.log(`[nanobot] Message content: "${content}", isTyping: ${state.isTyping}, isConnected: ${state.isConnected}`);
+    const hasImage = !!state.currentImage;
 
-    if (!content || state.isTyping) {
+    console.log(`[nanobot] Message content: "${content}", hasImage: ${hasImage}, isTyping: ${state.isTyping}, isConnected: ${state.isConnected}`);
+
+    // Allow sending if there's text OR image
+    if ((!content && !hasImage) || state.isTyping) {
         console.log('[nanobot] Message not sent: empty or already typing');
         return;
     }
@@ -521,17 +531,26 @@ function sendMessage() {
         welcomeMsg.style.display = 'none';
     }
 
-    // Save first message as session title
+    // Save first message as session title (use text or '图片' as title)
     if (!state.sessionTitle) {
-        state.sessionTitle = content;
-        localStorage.setItem(`sessionTitle_${state.sessionId}`, content);
-        elements.chatTitle.textContent = truncateTitle(content);
+        state.sessionTitle = content || '图片消息';
+        localStorage.setItem(`sessionTitle_${state.sessionId}`, state.sessionTitle);
+        elements.chatTitle.textContent = truncateTitle(state.sessionTitle);
         // Update sessions list to show new title
         loadSessions();
     }
 
-    // Add user message
-    appendMessage('user', content, true);
+    // Add user message with image if present
+    const displayContent = hasImage
+        ? (content ? `${content}\n\n[图片]` : '[图片]')
+        : content;
+    appendMessage('user', displayContent, true);
+
+    // If has image, append image element
+    if (hasImage) {
+        appendImageToLastMessage(state.currentImage);
+    }
+
     scrollToBottom(true);  // 强制滚动到底部
 
     // Send via WebSocket
@@ -539,14 +558,42 @@ function sendMessage() {
         state.isTyping = true;
         state.accumulatedResponse = '';
 
-        state.ws.send(JSON.stringify({
+        const messageData = {
             type: 'chat',
             session_id: state.sessionId,
             message: content,
-        }));
+        };
+
+        // Include image if present
+        if (hasImage) {
+            messageData.image = state.currentImage;
+        }
+
+        state.ws.send(JSON.stringify(messageData));
+
+        // Clear image after sending
+        clearImageSelection();
     } else {
         appendMessage('assistant', '⚠️ 未连接到服务器，请稍后重试。', false);
     }
+}
+
+function appendImageToLastMessage(imageData) {
+    const messages = elements.messagesContainer.querySelectorAll('.message.user');
+    if (messages.length === 0) return;
+
+    const lastMessage = messages[messages.length - 1];
+    const messageBody = lastMessage.querySelector('.message-body');
+    if (!messageBody) return;
+
+    const img = document.createElement('img');
+    img.src = imageData;
+    img.style.maxWidth = '100%';
+    img.style.maxHeight = '200px';
+    img.style.borderRadius = '8px';
+    img.style.marginTop = '8px';
+    img.style.display = 'block';
+    messageBody.appendChild(img);
 }
 
 function appendMessage(role, content, animate = true) {
@@ -644,6 +691,62 @@ function setupEventListeners() {
     elements.messagesContainer.addEventListener('scroll', () => {
         updateScrollButton();
     });
+
+    // Image upload handlers
+    if (elements.uploadBtn) {
+        elements.uploadBtn.addEventListener('click', () => {
+            elements.imageInput?.click();
+        });
+    }
+
+    if (elements.imageInput) {
+        elements.imageInput.addEventListener('change', handleImageSelect);
+    }
+
+    if (elements.removeImageBtn) {
+        elements.removeImageBtn.addEventListener('click', clearImageSelection);
+    }
+}
+
+// Image handling functions
+function handleImageSelect(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    // Check file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+        alert('图片大小不能超过 5MB');
+        return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+        state.currentImage = event.target.result;
+        showImagePreview(state.currentImage);
+    };
+    reader.readAsDataURL(file);
+}
+
+function showImagePreview(imageData) {
+    if (!elements.previewImg || !elements.imagePreviewContainer) return;
+
+    elements.previewImg.src = imageData;
+    elements.imagePreviewContainer.style.display = 'block';
+    elements.uploadBtn?.classList.add('has-image');
+}
+
+function clearImageSelection() {
+    state.currentImage = null;
+    if (elements.imagePreviewContainer) {
+        elements.imagePreviewContainer.style.display = 'none';
+    }
+    if (elements.previewImg) {
+        elements.previewImg.src = '';
+    }
+    if (elements.imageInput) {
+        elements.imageInput.value = '';
+    }
+    elements.uploadBtn?.classList.remove('has-image');
 }
 
 function setupTextarea() {

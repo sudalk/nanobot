@@ -531,6 +531,81 @@ body {
     background: var(--bg-primary);
 }
 
+/* Image Preview Container */
+.image-preview-container {
+    padding: 0 0 12px 0;
+}
+
+.image-preview {
+    position: relative;
+    display: inline-block;
+    max-width: 200px;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    border: 1px solid var(--border-color);
+}
+
+.image-preview img {
+    width: 100%;
+    height: auto;
+    max-height: 150px;
+    object-fit: cover;
+    display: block;
+}
+
+.remove-image {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 24px;
+    height: 24px;
+    border: none;
+    background: rgba(0, 0, 0, 0.6);
+    color: white;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 18px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+}
+
+.remove-image:hover {
+    background: rgba(0, 0, 0, 0.8);
+}
+
+/* Upload Button */
+.upload-btn {
+    width: 32px;
+    height: 32px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: all 0.2s;
+    flex-shrink: 0;
+}
+
+.upload-btn:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+.upload-btn svg {
+    width: 20px;
+    height: 20px;
+}
+
+.upload-btn.has-image {
+    color: var(--primary);
+}
+
 .input-container {
     display: flex;
     gap: 12px;
