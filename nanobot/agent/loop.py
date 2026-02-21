@@ -26,7 +26,7 @@ from nanobot.session.manager import SessionManager
 class AgentLoop:
     """
     The agent loop is the core processing engine.
-    
+
     It:
     1. Receives messages from the bus
     2. Builds context with history, memory, skills
@@ -34,7 +34,7 @@ class AgentLoop:
     4. Executes tool calls
     5. Sends responses back
     """
-    
+
     def __init__(
         self,
         bus: MessageBus,
@@ -45,6 +45,7 @@ class AgentLoop:
         brave_api_key: str | None = None,
         exec_config: "ExecToolConfig | None" = None,
         cron_service: "CronService | None" = None,
+        providers: dict[str, LLMProvider] | None = None,
     ):
         from nanobot.config.schema import ExecToolConfig
         from nanobot.cron.service import CronService
@@ -56,7 +57,10 @@ class AgentLoop:
         self.brave_api_key = brave_api_key
         self.exec_config = exec_config or ExecToolConfig()
         self.cron_service = cron_service
-        
+
+        # Support multiple providers for model switching
+        self._providers = providers or {"default": provider}
+
         self.context = ContextBuilder(workspace)
         self.sessions = SessionManager(workspace)
         self.tools = ToolRegistry()
@@ -68,9 +72,31 @@ class AgentLoop:
             brave_api_key=brave_api_key,
             exec_config=self.exec_config,
         )
-        
+
         self._running = False
         self._register_default_tools()
+
+    def _get_provider_for_model(self, model: str | None) -> tuple[LLMProvider, str]:
+        """Get the appropriate provider and model name for a given model alias."""
+        if not model:
+            return self.provider, self.model
+
+        model_lower = model.lower()
+
+        # Map aliases to full model names and select provider
+        if model_lower == "qwen":
+            # Use qwen provider if available, otherwise default
+            provider = self._providers.get("qwen", self.provider)
+            logger.info(f"[AgentLoop] Selected qwen provider: {provider.__class__.__name__}")
+            return provider, "openai/qwen3.5-plus"
+        elif model_lower == "minimax":
+            # Use minimax provider if available, otherwise default
+            provider = self._providers.get("minimax", self.provider)
+            logger.info(f"[AgentLoop] Selected minimax provider: {provider.__class__.__name__}")
+            return provider, "minimax/MiniMax-M2.1"
+
+        # Direct model name - use default provider
+        return self.provider, model
     
     def _register_default_tools(self) -> None:
         """Register the default set of tools."""
@@ -230,23 +256,32 @@ class AgentLoop:
         self._running = False
         logger.info("Agent loop stopping")
     
-    async def _process_message(self, msg: InboundMessage) -> OutboundMessage | None:
+    async def _process_message(
+        self,
+        msg: InboundMessage,
+        override_model: str | None = None
+    ) -> OutboundMessage | None:
         """
         Process a single inbound message.
-        
+
         Args:
             msg: The inbound message to process.
-        
+            override_model: Optional model to use for this message (e.g., 'qwen', 'minimax')
+
         Returns:
             The response message, or None if no response needed.
         """
         # Handle system messages (subagent announces)
         # The chat_id contains the original "channel:chat_id" to route back to
         if msg.channel == "system":
-            return await self._process_system_message(msg)
-        
+            return await self._process_system_message(msg, override_model)
+
         logger.info(f"Processing message from {msg.channel}:{msg.sender_id}")
-        
+
+        # Use override model if provided, otherwise use default
+        provider, model = self._get_provider_for_model(override_model)
+        logger.info(f"[AgentLoop] Using model: {model}, provider: {provider.__class__.__name__}")
+
         # Get or create session
         session = self.sessions.get_or_create(msg.session_key)
         
@@ -335,15 +370,15 @@ class AgentLoop:
         # Agent loop
         iteration = 0
         final_content = None
-        
+
         while iteration < self.max_iterations:
             iteration += 1
-            
-            # Call LLM
-            response = await self.provider.chat(
+
+            # Call LLM with selected provider and model
+            response = await provider.chat(
                 messages=messages,
                 tools=self.tools.get_definitions(),
-                model=self.model
+                model=model
             )
             
             # Handle tool calls
@@ -391,15 +426,26 @@ class AgentLoop:
             content=final_content
         )
     
-    async def _process_system_message(self, msg: InboundMessage) -> OutboundMessage | None:
+    async def _process_system_message(
+        self,
+        msg: InboundMessage,
+        override_model: str | None = None
+    ) -> OutboundMessage | None:
         """
         Process a system message (e.g., subagent announce).
-        
+
         The chat_id field contains "original_channel:original_chat_id" to route
         the response back to the correct destination.
+
+        Args:
+            msg: The system message.
+            override_model: Optional model to use for this message.
         """
         logger.info(f"Processing system message from {msg.sender_id}")
-        
+
+        # Determine which provider and model to use
+        provider, model = self.get_provider_for_model(override_model)
+
         # Parse origin from chat_id (format: "channel:chat_id")
         if ":" in msg.chat_id:
             parts = msg.chat_id.split(":", 1)
@@ -447,10 +493,10 @@ class AgentLoop:
         while iteration < self.max_iterations:
             iteration += 1
             
-            response = await self.provider.chat(
+            response = await provider.chat(
                 messages=messages,
                 tools=self.tools.get_definitions(),
-                model=self.model
+                model=model
             )
             
             if response.has_tool_calls:
@@ -501,6 +547,7 @@ class AgentLoop:
         channel: str = "cli",
         chat_id: str = "direct",
         media: list[str] | None = None,
+        model: str | None = None,
     ) -> str:
         """
         Process a message directly (for CLI or cron usage).
@@ -511,10 +558,12 @@ class AgentLoop:
             channel: Source channel (for context).
             chat_id: Source chat ID (for context).
             media: Optional list of media URLs or base64 data.
+            model: Optional model to use (e.g., 'qwen', 'minimax').
 
         Returns:
             The agent's response.
         """
+        # Pass model alias directly - _get_provider_for_model will handle mapping
         msg = InboundMessage(
             channel=channel,
             sender_id="user",
@@ -523,5 +572,5 @@ class AgentLoop:
             media=media or [],
         )
 
-        response = await self._process_message(msg)
+        response = await self._process_message(msg, override_model=model)
         return response.content if response else ""

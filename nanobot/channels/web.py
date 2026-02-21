@@ -323,6 +323,7 @@ class WebChannel(BaseChannel):
                     data = await websocket.receive_text()
                     try:
                         msg_data = json.loads(data)
+                        logger.info(f"[WebChannel] Received WebSocket data: {msg_data}")
                     except json.JSONDecodeError:
                         await websocket.send_json(
                             {"type": "error", "message": "Invalid JSON"}
@@ -335,6 +336,8 @@ class WebChannel(BaseChannel):
                         await self._handle_chat_message(websocket, msg_data, client_id)
                     elif msg_type == "ping":
                         await websocket.send_json({"type": "pong"})
+                    elif msg_type == "get_models":
+                        await self._handle_get_models(websocket)
                     else:
                         await websocket.send_json(
                             {"type": "error", "message": f"Unknown type: {msg_type}"}
@@ -357,6 +360,17 @@ class WebChannel(BaseChannel):
         # Mount static files if directory exists
         if STATIC_DIR.exists():
             self.app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+    async def _handle_get_models(self, websocket: WebSocket) -> None:
+        """Handle get available models request."""
+        models = [
+            {"id": "qwen", "name": "Qwen 3.5 (多模态)", "description": "支持视觉理解的统一多模态模型"},
+            {"id": "minimax", "name": "MiniMax", "description": "支持搜索和视觉理解工具"},
+        ]
+        await websocket.send_json({
+            "type": "models_list",
+            "models": models
+        })
 
     async def _handle_chat_message(
         self, websocket: WebSocket, data: dict[str, Any], client_id: str
@@ -415,12 +429,18 @@ class WebChannel(BaseChannel):
                 # Store image temporarily and get a URL, or pass as base64 in metadata
                 media.append(image)  # Base64 data URL
 
+            # Get model selection from client
+            model = data.get("model", "qwen")  # Default to qwen
+            logger.info(f"[WebChannel] Received model from client: {data.get('model')}")
+            logger.info(f"[WebChannel] Using model: {model}")
+
             response = await self.agent.process_direct(
                 content=message or "[图片]",  # Use placeholder if only image
                 session_key=session_key,
                 channel="web",
                 chat_id=session_id,
                 media=media if media else None,
+                model=model,
             )
             logger.info(f"[WebChannel] Got response from agent: {response[:50]}...")
 

@@ -38,6 +38,8 @@ const elements = {
     imagePreview: document.getElementById('imagePreview'),
     previewImg: document.getElementById('previewImg'),
     removeImageBtn: document.getElementById('removeImageBtn'),
+    modelSelect: document.getElementById('modelSelect'),
+    modelDescription: document.getElementById('modelDescription'),
 };
 
 // Initialize the app
@@ -61,6 +63,9 @@ function init() {
     // Load or create session
     loadSession();
 
+    // Load model preference
+    loadModelPreference();
+
     // Connect WebSocket
     connectWebSocket();
 
@@ -73,7 +78,59 @@ function init() {
     // Setup textarea auto-resize
     setupTextarea();
 
+    // Setup model selector
+    setupModelSelector();
+
     console.log('[nanobot] Initialization complete');
+}
+
+// Model selector management
+function loadModelPreference() {
+    const savedModel = localStorage.getItem('selectedModel');
+    console.log('[nanobot] Loading model preference:', savedModel);
+    if (savedModel && elements.modelSelect) {
+        // Only set if it's a valid option
+        const validOptions = Array.from(elements.modelSelect.options).map(opt => opt.value);
+        if (validOptions.includes(savedModel)) {
+            elements.modelSelect.value = savedModel;
+            updateModelDescription(savedModel);
+            console.log('[nanobot] Model preference loaded:', savedModel);
+        } else {
+            console.warn('[nanobot] Invalid saved model:', savedModel, 'valid options:', validOptions);
+            localStorage.removeItem('selectedModel');
+        }
+    }
+}
+
+function setupModelSelector() {
+    if (!elements.modelSelect) return;
+
+    elements.modelSelect.addEventListener('change', (e) => {
+        const selectedModel = e.target.value;
+        localStorage.setItem('selectedModel', selectedModel);
+        updateModelDescription(selectedModel);
+        console.log('[nanobot] Model changed to:', selectedModel);
+    });
+}
+
+function updateModelDescription(model) {
+    if (!elements.modelDescription) return;
+
+    const descriptions = {
+        'qwen': '支持视觉理解的统一多模态模型',
+        'minimax': '支持搜索和视觉理解工具',
+    };
+    elements.modelDescription.textContent = descriptions[model] || '';
+}
+
+function getSelectedModel() {
+    if (!elements.modelSelect) {
+        console.error('[nanobot] modelSelect element not found!');
+        return 'qwen';
+    }
+    const value = elements.modelSelect.value;
+    console.log('[nanobot] getSelectedModel returning:', value);
+    return value;
 }
 
 // Theme management
@@ -509,6 +566,13 @@ function updateTaskElement(element, task) {
 // Message handling
 function sendMessage() {
     console.log('[nanobot] sendMessage called');
+    console.log('[nanobot] messageInput element:', elements.messageInput);
+    console.log('[nanobot] messageInput value:', elements.messageInput?.value);
+
+    if (!elements.messageInput) {
+        console.error('[nanobot] messageInput is null!');
+        return;
+    }
 
     const content = elements.messageInput.value.trim();
     const hasImage = !!state.currentImage;
@@ -554,14 +618,23 @@ function sendMessage() {
     scrollToBottom(true);  // 强制滚动到底部
 
     // Send via WebSocket
+    console.log('[nanobot] About to check isConnected:', state.isConnected);
     if (state.isConnected) {
+        console.log('[nanobot] Entering isConnected block');
         state.isTyping = true;
         state.accumulatedResponse = '';
+
+        console.log('[nanobot] Calling getSelectedModel...');
+        const selectedModel = getSelectedModel();
+        console.log('[nanobot] Selected model:', selectedModel);
+        console.log('[nanobot] modelSelect element value:', elements.modelSelect?.value);
+        console.log('[nanobot] modelSelect element:', elements.modelSelect);
 
         const messageData = {
             type: 'chat',
             session_id: state.sessionId,
             message: content,
+            model: selectedModel,
         };
 
         // Include image if present
@@ -569,7 +642,9 @@ function sendMessage() {
             messageData.image = state.currentImage;
         }
 
-        state.ws.send(JSON.stringify(messageData));
+        const jsonStr = JSON.stringify(messageData);
+        console.log('[nanobot] Sending WebSocket message:', jsonStr);
+        state.ws.send(jsonStr);
 
         // Clear image after sending
         clearImageSelection();

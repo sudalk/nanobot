@@ -50,6 +50,16 @@
                 </div>
             </div>
 
+            <!-- Model Selector Bar -->
+            <div class="model-selector-bar">
+                <label for="modelSelect">模型:</label>
+                <select id="modelSelect" class="model-select">
+                    <option value="qwen">🧠 Qwen 3.5 (多模态)</option>
+                    <option value="minimax">🔍 MiniMax (搜索+视觉)</option>
+                </select>
+                <span class="model-description" id="modelDescription">支持视觉理解的统一多模态模型</span>
+            </div>
+
             <!-- Input Area -->
             <div class="input-area">
                 <div class="image-preview-container" id="imagePreviewContainer" style="display: none;">

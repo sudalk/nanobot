@@ -5,6 +5,7 @@ from typing import Any
 
 import litellm
 from litellm import acompletion
+from loguru import logger
 
 from nanobot.providers.base import LLMProvider, LLMResponse, ToolCallRequest
 
@@ -57,7 +58,9 @@ class LiteLLMProvider(LLMProvider):
                 os.environ.setdefault("GROQ_API_KEY", api_key)
             elif "minimax" in default_model.lower():
                 os.environ.setdefault("MINIMAX_API_KEY", api_key)
-        
+            elif "qwen" in default_model.lower() or "qwen" in str(api_base).lower():
+                os.environ.setdefault("DASHSCOPE_API_KEY", api_key)
+
         if api_base:
             litellm.api_base = api_base
         
@@ -86,43 +89,43 @@ class LiteLLMProvider(LLMProvider):
             LLMResponse with content and/or tool calls.
         """
         model = model or self.default_model
-        
+
         # For OpenRouter, prefix model name if not already prefixed
         if self.is_openrouter and not model.startswith("openrouter/"):
             model = f"openrouter/{model}"
-        
+
         # For Zhipu/Z.ai, ensure prefix is present
-        # Handle cases like "glm-4.7-flash" -> "zai/glm-4.7-flash"
         if ("glm" in model.lower() or "zhipu" in model.lower()) and not (
-            model.startswith("zhipu/") or 
-            model.startswith("zai/") or 
+            model.startswith("zhipu/") or
+            model.startswith("zai/") or
             model.startswith("openrouter/")
         ):
             model = f"zai/{model}"
-        
-        # For vLLM, use hosted_vllm/ prefix per LiteLLM docs
-        # NOTE: MiniMax OpenAI-compatible endpoints are NOT vLLM, do not apply this prefix.
-        # Convert openai/ prefix to hosted_vllm/ if user specified it
-        if self.is_vllm and not (self.api_base and "minimaxi.com" in self.api_base):
-            model = f"hosted_vllm/{model}"
-        
+
         # For Gemini, ensure gemini/ prefix if not already present
         if "gemini" in model.lower() and not model.startswith("gemini/"):
             model = f"gemini/{model}"
-        
+
+        # For Qwen via DashScope, use openai/ prefix
+        if "qwen" in model.lower() and not model.startswith("openai/"):
+            model = f"openai/{model}"
+
         kwargs: dict[str, Any] = {
             "model": model,
             "messages": messages,
             "max_tokens": max_tokens,
             "temperature": temperature,
         }
-        
+
         # Pass base_url/api_key explicitly to avoid relying on env / provider inference
         if self.api_base:
             # LiteLLM uses `base_url` / `api_base` depending on version; 1.81.8 accepts `base_url`.
             kwargs["base_url"] = self.api_base
         if self.api_key:
             kwargs["api_key"] = self.api_key
+
+        # Debug logging
+        logger.info(f"[LiteLLM] Request: model={model}, api_base={self.api_base}, is_vllm={self.is_vllm}")
         
         if tools:
             kwargs["tools"] = tools
@@ -132,6 +135,9 @@ class LiteLLMProvider(LLMProvider):
             response = await acompletion(**kwargs)
             return self._parse_response(response)
         except Exception as e:
+            # Log detailed error info for debugging
+            logger.error(f"[LiteLLM] Error calling model '{model}': {e}")
+            logger.error(f"[LiteLLM] base_url={self.api_base}, api_key={'set' if self.api_key else 'not set'}")
             # Return error as content for graceful handling
             return LLMResponse(
                 content=f"Error calling LLM: {str(e)}",

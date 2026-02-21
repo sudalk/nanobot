@@ -78,6 +78,7 @@ class ProvidersConfig(BaseModel):
     vllm: ProviderConfig = Field(default_factory=ProviderConfig)
     gemini: ProviderConfig = Field(default_factory=ProviderConfig)
     minimax: ProviderConfig = Field(default_factory=ProviderConfig)
+    qwen: ProviderConfig = Field(default_factory=ProviderConfig)
 
 
 class GatewayConfig(BaseModel):
@@ -143,8 +144,15 @@ class Config(BaseSettings):
         """Get expanded workspace path."""
         return Path(self.agents.defaults.workspace).expanduser()
     
-    def get_api_key(self) -> str | None:
-        """Get API key in priority order: OpenRouter > DeepSeek > MiniMax > Anthropic > OpenAI > Gemini > Zhipu > Groq > vLLM."""
+    def get_api_key(self, provider: str | None = None) -> str | None:
+        """Get API key for a specific provider or in priority order."""
+        if provider:
+            provider_config = getattr(self.providers, provider, None)
+            if provider_config:
+                return provider_config.api_key
+            return None
+
+        """Priority order: OpenRouter > DeepSeek > MiniMax > Anthropic > OpenAI > Gemini > Zhipu > Groq > vLLM > Qwen."""
         return (
             self.providers.openrouter.api_key or
             self.providers.deepseek.api_key or
@@ -155,17 +163,35 @@ class Config(BaseSettings):
             self.providers.zhipu.api_key or
             self.providers.groq.api_key or
             self.providers.vllm.api_key or
+            self.providers.qwen.api_key or
             None
         )
     
-    def get_api_base(self) -> str | None:
-        """Get API base URL if using OpenRouter, MiniMax, Zhipu or vLLM."""
+    def get_api_base(self, provider: str | None = None) -> str | None:
+        """Get API base URL for a specific provider."""
+        if provider:
+            provider_config = getattr(self.providers, provider, None)
+            if not provider_config:
+                return None
+
+            # Default URLs for known providers
+            defaults = {
+                "openrouter": "https://openrouter.ai/api/v1",
+                "minimax": "https://api.minimax.io/v1",
+                "qwen": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            }
+            default_url = defaults.get(provider)
+            return provider_config.api_base or default_url
+
+        # Legacy: auto-detect based on which provider has API key
         if self.providers.openrouter.api_key:
             return self.providers.openrouter.api_base or "https://openrouter.ai/api/v1"
         if self.providers.minimax.api_key:
             return self.providers.minimax.api_base or "https://api.minimax.io/v1"
         if self.providers.zhipu.api_key:
             return self.providers.zhipu.api_base
+        if self.providers.qwen.api_key:
+            return self.providers.qwen.api_base or "https://dashscope.aliyuncs.com/compatible-mode/v1"
         if self.providers.vllm.api_base:
             return self.providers.vllm.api_base
         return None

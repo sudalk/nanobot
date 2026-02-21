@@ -311,11 +311,38 @@ def web(
         raise typer.Exit(1)
 
     bus = MessageBus()
+
+    # Create default provider
     provider = LiteLLMProvider(
         api_key=api_key,
         api_base=api_base,
         default_model=config.agents.defaults.model
     )
+
+    # Create providers dict for model switching
+    providers: dict[str, LiteLLMProvider] = {"default": provider}
+
+    # Qwen provider (if configured)
+    qwen_key = config.get_api_key("qwen")
+    qwen_base = config.get_api_base("qwen")
+    if qwen_key:
+        providers["qwen"] = LiteLLMProvider(
+            api_key=qwen_key,
+            api_base=qwen_base,
+            default_model="qwen3.5-plus"
+        )
+        console.print("[green]✓[/green] Qwen provider configured")
+
+    # MiniMax provider (if configured)
+    minimax_key = config.get_api_key("minimax")
+    minimax_base = config.get_api_base("minimax")
+    if minimax_key:
+        providers["minimax"] = LiteLLMProvider(
+            api_key=minimax_key,
+            api_base=minimax_base,
+            default_model="minimax/MiniMax-M2.1"
+        )
+        console.print("[green]✓[/green] MiniMax provider configured")
 
     agent = AgentLoop(
         bus=bus,
@@ -325,6 +352,7 @@ def web(
         max_iterations=config.agents.defaults.max_tool_iterations,
         brave_api_key=config.tools.web.search.api_key or None,
         exec_config=config.tools.exec,
+        providers=providers,
     )
 
     session_manager = SessionManager(config.workspace_path)
@@ -725,6 +753,7 @@ def status():
         has_deepseek = bool(config.providers.deepseek.api_key)
         has_groq = bool(config.providers.groq.api_key)
         has_zhipu = bool(config.providers.zhipu.api_key)
+        has_qwen = bool(config.providers.qwen.api_key)
 
         console.print(f"OpenRouter API: {'[green]✓[/green]' if has_openrouter else '[dim]not set[/dim]'}")
         console.print(f"Anthropic API: {'[green]✓[/green]' if has_anthropic else '[dim]not set[/dim]'}")
@@ -737,9 +766,10 @@ def status():
         console.print(f"DeepSeek API: {'[green]✓[/green]' if has_deepseek else '[dim]not set[/dim]'}")
         console.print(f"Groq API: {'[green]✓[/green]' if has_groq else '[dim]not set[/dim]'}")
         console.print(f"Zhipu API: {'[green]✓[/green]' if has_zhipu else '[dim]not set[/dim]'}")
+        console.print(f"Qwen API: {'[green]✓[/green]' if has_qwen else '[dim]not set[/dim]'}")
 
         # Overall LLM status
-        has_any_llm = has_openrouter or has_anthropic or has_openai or has_gemini or has_vllm or has_minimax or has_deepseek or has_groq or has_zhipu
+        has_any_llm = has_openrouter or has_anthropic or has_openai or has_gemini or has_vllm or has_minimax or has_deepseek or has_groq or has_zhipu or has_qwen
         console.print(f"\nLLM Provider: {'[green]✓ Configured[/green]' if has_any_llm else '[red]✗ Not configured[/red]'}")
 
 
