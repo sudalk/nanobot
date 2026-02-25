@@ -117,6 +117,14 @@ class LiteLLMProvider(LLMProvider):
             "temperature": temperature,
         }
 
+        # Debug: log messages with images
+        for i, msg in enumerate(messages):
+            content = msg.get("content")
+            if isinstance(content, list):
+                logger.info(f"[LiteLLM] Message {i} has multimodal content with {len(content)} parts")
+            else:
+                logger.info(f"[LiteLLM] Message {i}: role={msg.get('role')}, content_len={len(content) if content else 0}")
+
         # Pass base_url/api_key explicitly to avoid relying on env / provider inference
         if self.api_base:
             # LiteLLM uses `base_url` / `api_base` depending on version; 1.81.8 accepts `base_url`.

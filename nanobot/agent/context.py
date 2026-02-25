@@ -162,16 +162,29 @@ When remembering something, write to {workspace_path}/memory/MEMORY.md"""
         """Build user message content with optional base64-encoded images."""
         if not media:
             return text
-        
+
         images = []
         for path in media:
+            # Handle base64 data URLs directly
+            if path.startswith("data:"):
+                # Parse data URL: data:{mime};base64,{data}
+                try:
+                    header, _ = path.split(",", 1)
+                    mime = header.split(";")[0].replace("data:", "")
+                    if mime.startswith("image/"):
+                        images.append({"type": "image_url", "image_url": {"url": path}})
+                except ValueError:
+                    continue
+                continue
+
+            # Handle file paths
             p = Path(path)
             mime, _ = mimetypes.guess_type(path)
             if not p.is_file() or not mime or not mime.startswith("image/"):
                 continue
             b64 = base64.b64encode(p.read_bytes()).decode()
             images.append({"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}})
-        
+
         if not images:
             return text
         return images + [{"type": "text", "text": text}]

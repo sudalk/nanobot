@@ -153,14 +153,19 @@ body {
 }
 
 .session-delete {
-    opacity: 0;
-    background: none;
+    opacity: 0.7;
+    background: rgba(255, 255, 255, 0.1);
     border: none;
     color: inherit;
     cursor: pointer;
     padding: 4px 8px;
+    margin-left: 8px;
     border-radius: var(--radius-sm);
     transition: all 0.2s;
+    font-size: 12px;
+    line-height: 1;
+    z-index: 10;
+    white-space: nowrap;
 }
 
 .session-item:hover .session-delete {
@@ -168,7 +173,35 @@ body {
 }
 
 .session-delete:hover {
-    background: rgba(255, 255, 255, 0.2);
+    background: rgba(255, 100, 100, 0.3);
+}
+
+.session-delete:active {
+    transform: scale(0.95);
+}
+
+/* Editable session title */
+.session-title[data-editable="true"] {
+    cursor: text;
+}
+
+.session-title[data-editable="true"]:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    padding: 2px 4px;
+    margin: -2px -4px;
+}
+
+.session-title-input {
+    font-size: 14px;
+    font-weight: 500;
+    background: var(--bg-primary);
+    border: 1px solid var(--primary);
+    border-radius: var(--radius-sm);
+    padding: 2px 6px;
+    color: var(--text-primary);
+    width: 100%;
+    outline: none;
 }
 
 /* Sidebar Footer */
@@ -234,6 +267,14 @@ body {
     font-size: 16px;
     font-weight: 600;
     color: var(--text-primary);
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+    transition: background 0.2s;
+}
+
+.chat-title:hover {
+    background: var(--bg-tertiary);
 }
 
 .theme-btn {

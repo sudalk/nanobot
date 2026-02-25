@@ -3,6 +3,18 @@
  * Frontend logic for the chat interface
  */
 
+// Version check - clear storage if version mismatch
+const APP_VERSION = '2.0';
+const storedVersion = localStorage.getItem('nanobot_version');
+if (storedVersion !== APP_VERSION) {
+    console.log('[nanobot] Version mismatch, clearing old localStorage data');
+    // Keep only theme preference
+    const theme = localStorage.getItem('nanobot-theme');
+    localStorage.clear();
+    if (theme) localStorage.setItem('nanobot-theme', theme);
+    localStorage.setItem('nanobot_version', APP_VERSION);
+}
+
 // State management
 const state = {
     sessionId: null,
@@ -196,7 +208,7 @@ function createNewSession() {
 
 async function loadSessionHistory(sessionId) {
     try {
-        const response = await fetch(`/api/sessions/web:${sessionId}/history`);
+        const response = await fetch(`/api/sessions/${sessionId}/history`);
         const messages = await response.json();
 
         // Clear and prepare container
@@ -233,7 +245,9 @@ async function loadSessionHistory(sessionId) {
 async function loadSessions() {
     try {
         const response = await fetch('/api/sessions');
-        state.sessions = await response.json();
+        const sessions = await response.json();
+        // Sort by updated_at desc (most recent first)
+        state.sessions = sessions.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
         renderSessionsList();
     } catch (error) {
         console.error('Failed to load sessions:', error);
@@ -262,20 +276,39 @@ function renderSessionsList() {
 
         item.innerHTML = `
             <div class="session-info">
-                <div class="session-title">${displayTitle}</div>
+                <div class="session-title" data-editable="true">${displayTitle}</div>
                 <div class="session-time">${timeStr}</div>
             </div>
-            <button class="session-delete" title="删除会话">×</button>
+            <button class="session-delete" title="删除会话">删除</button>
         `;
 
-        item.addEventListener('click', (e) => {
-            if (e.target.classList.contains('session-delete')) {
-                e.stopPropagation();
-                deleteSession(sessionId);
-            } else {
-                switchSession(sessionId);
+        // Bind click event with proper closure
+        (function(sid, sessionItem) {
+            // Main item click - switch session
+            sessionItem.addEventListener('click', (e) => {
+                if (e.target.closest('.session-delete')) {
+                    return; // Ignore delete button clicks
+                }
+                if (e.target.classList.contains('session-title') && e.target.dataset.editable === 'true') {
+                    e.stopPropagation();
+                    editSessionTitle(sid, e.target);
+                } else {
+                    switchSession(sid);
+                }
+            });
+
+            // Delete button click - bind directly to delete button
+            const deleteBtn = sessionItem.querySelector('.session-delete');
+            if (deleteBtn) {
+                deleteBtn.addEventListener('click', (e) => {
+                    console.log('[SessionItem] Delete button clicked for:', sid);
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                    deleteSession(sid);
+                });
             }
-        });
+        })(sessionId, item);
 
         elements.sessionsList.appendChild(item);
     });
@@ -292,10 +325,15 @@ async function switchSession(sessionId) {
 }
 
 async function deleteSession(sessionId) {
+    console.log('[deleteSession] Attempting to delete:', sessionId);
     if (!confirm('确定要删除这个会话吗？')) return;
 
     try {
-        await fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' });
+        const url = `/api/sessions/${sessionId}`;
+        console.log('[deleteSession] DELETE', url);
+        const response = await fetch(url, { method: 'DELETE' });
+        const result = await response.json();
+        console.log('[deleteSession] Response:', result);
 
         // Remove saved title from localStorage
         localStorage.removeItem(`sessionTitle_${sessionId}`);
@@ -309,6 +347,49 @@ async function deleteSession(sessionId) {
     } catch (error) {
         console.error('Failed to delete session:', error);
     }
+}
+
+function editSessionTitle(sessionId, titleElement) {
+    const currentTitle = localStorage.getItem(`sessionTitle_${sessionId}`) || '';
+
+    // Create input element
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = currentTitle;
+    input.className = 'session-title-input';
+
+    // Replace title with input
+    titleElement.replaceWith(input);
+    input.focus();
+    input.select();
+
+    function saveTitle() {
+        const newTitle = input.value.trim();
+        if (newTitle) {
+            localStorage.setItem(`sessionTitle_${sessionId}`, newTitle);
+            // Update current session title if editing active session
+            if (sessionId === state.sessionId) {
+                state.sessionTitle = newTitle;
+                elements.chatTitle.textContent = truncateTitle(newTitle);
+            }
+        }
+        renderSessionsList();
+    }
+
+    function cancelEdit() {
+        renderSessionsList();
+    }
+
+    input.addEventListener('blur', saveTitle);
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            saveTitle();
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            cancelEdit();
+        }
+    });
 }
 
 // WebSocket management
@@ -750,6 +831,21 @@ function setupEventListeners() {
 
     // Theme button
     elements.themeBtn.addEventListener('click', toggleTheme);
+
+    // Chat title click to edit
+    elements.chatTitle.addEventListener('click', () => {
+        if (!state.sessionId) return;
+        const newTitle = prompt('输入新会话名称:', state.sessionTitle || '');
+        if (newTitle !== null) {
+            const trimmed = newTitle.trim();
+            if (trimmed) {
+                state.sessionTitle = trimmed;
+                localStorage.setItem(`sessionTitle_${state.sessionId}`, trimmed);
+                elements.chatTitle.textContent = truncateTitle(trimmed);
+                loadSessions();
+            }
+        }
+    });
 
     // Send button
     elements.sendBtn.addEventListener('click', sendMessage);

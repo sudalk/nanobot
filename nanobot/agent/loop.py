@@ -86,14 +86,22 @@ class AgentLoop:
         # Map aliases to full model names and select provider
         if model_lower == "qwen":
             # Use qwen provider if available, otherwise default
-            provider = self._providers.get("qwen", self.provider)
-            logger.info(f"[AgentLoop] Selected qwen provider: {provider.__class__.__name__}")
+            if "qwen" in self._providers:
+                provider = self._providers["qwen"]
+                logger.info(f"[AgentLoop] Selected qwen provider: {provider.__class__.__name__}")
+            else:
+                provider = self.provider
+                logger.warning(f"[AgentLoop] Qwen provider not configured, falling back to {provider.__class__.__name__}")
             return provider, "openai/qwen3.5-plus"
         elif model_lower == "minimax":
             # Use minimax provider if available, otherwise default
-            provider = self._providers.get("minimax", self.provider)
-            logger.info(f"[AgentLoop] Selected minimax provider: {provider.__class__.__name__}")
-            return provider, "minimax/MiniMax-M2.1"
+            if "minimax" in self._providers:
+                provider = self._providers["minimax"]
+                logger.info(f"[AgentLoop] Selected minimax provider: {provider.__class__.__name__}")
+            else:
+                provider = self.provider
+                logger.warning(f"[AgentLoop] MiniMax provider not configured, falling back to {provider.__class__.__name__}")
+            return provider, "minimax/MiniMax-M2.5"
 
         # Direct model name - use default provider
         return self.provider, model
@@ -282,6 +290,9 @@ class AgentLoop:
         provider, model = self._get_provider_for_model(override_model)
         logger.info(f"[AgentLoop] Using model: {model}, provider: {provider.__class__.__name__}")
 
+        # Check if using MiniMax model (for MCP tool routing)
+        is_minimax = "minimax" in model.lower()
+
         # Get or create session
         session = self.sessions.get_or_create(msg.session_key)
         
@@ -303,42 +314,49 @@ class AgentLoop:
         if exec_tool and hasattr(exec_tool, 'set_context'):
             exec_tool.set_context(msg.channel, msg.chat_id)
         
-        # Check if message contains images - auto-route to minimax_understand_image
-        if msg.media and self.tools.has("minimax_understand_image"):
-            logger.info(f"[AgentLoop] Auto-routing image to minimax_understand_image")
-            # Build context with image
-            image_data = msg.media[0] if msg.media else None
-            if image_data:
-                try:
-                    # Prepare image_source parameter (base64 or URL)
-                    if image_data.startswith("data:"):
-                        # For base64 data, pass directly
-                        image_source = image_data
-                    else:
-                        # For URLs, pass as-is
-                        image_source = image_data
+        # Check if message contains images
+        if msg.media:
+            logger.info(f"[AgentLoop] Image detected, is_minimax={is_minimax}, has_tool={self.tools.has('minimax_understand_image')}")
+            if is_minimax and self.tools.has("minimax_understand_image"):
+                logger.info(f"[AgentLoop] Using MiniMax MCP to process image")
+                # Build context with image
+                image_data = msg.media[0] if msg.media else None
+                if image_data:
+                    try:
+                        # Prepare image_source parameter (base64 or URL)
+                        if image_data.startswith("data:"):
+                            # For base64 data, pass directly
+                            image_source = image_data
+                        else:
+                            # For URLs, pass as-is
+                            image_source = image_data
 
-                    result = await self.tools.execute("minimax_understand_image", {
-                        "prompt": msg.content or "描述这张图片",
-                        "image_source": image_source
-                    })
-                    # Save result to session and return
-                    session.add_message("user", f"[图片] {msg.content}" if msg.content else "[图片]")
-                    session.add_message("assistant", result)
-                    self.sessions.save(session)
-                    return OutboundMessage(
-                        channel=msg.channel,
-                        chat_id=msg.chat_id,
-                        content=result
-                    )
-                except Exception as e:
-                    logger.error(f"[AgentLoop] minimax_understand_image failed: {e}")
-                    # Fall through to normal processing
+                        result = await self.tools.execute("minimax_understand_image", {
+                            "prompt": msg.content or "描述这张图片",
+                            "image_source": image_source
+                        })
+                        # Save result to session and return
+                        session.add_message("user", f"[图片] {msg.content}" if msg.content else "[图片]")
+                        session.add_message("assistant", result)
+                        self.sessions.save(session)
+                        return OutboundMessage(
+                            channel=msg.channel,
+                            chat_id=msg.chat_id,
+                            content=result
+                        )
+                    except Exception as e:
+                        logger.error(f"[AgentLoop] minimax_understand_image failed: {e}")
+                        # Fall through to normal processing
+            elif not is_minimax:
+                # For Qwen and other multimodal models, let the LLM handle the image directly
+                logger.info(f"[AgentLoop] Using {model} native multimodal capability for image")
+                # Continue to normal processing - the provider will handle the image
 
-        # Check if message looks like a search query - auto-route to minimax_web_search
+        # Check if message looks like a search query
         search_keywords = ["搜索", "查找", "查询", "最新", "新闻", "search", "find", "look up", "latest"]
         is_search_query = any(kw in msg.content.lower() for kw in search_keywords)
 
+        # Use MiniMax MCP search tool for search queries (better search capability)
         if is_search_query and self.tools.has("minimax_web_search"):
             logger.info(f"[AgentLoop] Auto-routing search query to minimax_web_search")
             try:

@@ -340,7 +340,7 @@ def web(
         providers["minimax"] = LiteLLMProvider(
             api_key=minimax_key,
             api_base=minimax_base,
-            default_model="minimax/MiniMax-M2.1"
+            default_model="minimax/MiniMax-M2.5"
         )
         console.print("[green]✓[/green] MiniMax provider configured")
 
