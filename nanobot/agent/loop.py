@@ -3,7 +3,7 @@
 import asyncio
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Optional
 
 from loguru import logger
 
@@ -35,10 +35,10 @@ class AgentLoop:
     5. Sends responses back
     """
 
-    _log_callback: callable | None = None
+    _log_callback: Optional[Callable] = None
 
     @classmethod
-    def set_log_callback(cls, callback: callable | None):
+    def set_log_callback(cls, callback: Optional[Callable]):
         """Set a callback for sending logs to clients."""
         cls._log_callback = callback
 
