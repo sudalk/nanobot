@@ -717,6 +717,288 @@ body {
     color: var(--text-muted);
 }
 
+/* Log Sidebar Styles */
+.log-sidebar {
+    width: 320px;
+    background: var(--bg-secondary);
+    border-left: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    transition: transform 0.3s ease, width 0.3s ease;
+}
+
+.log-sidebar.collapsed {
+    width: 0;
+    transform: translateX(100%);
+    overflow: hidden;
+}
+
+.log-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--bg-tertiary);
+}
+
+.log-header h3 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.log-controls {
+    display: flex;
+    gap: 4px;
+}
+
+.log-controls button {
+    width: 28px;
+    height: 28px;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    transition: all 0.2s;
+}
+
+.log-controls button:hover {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+}
+
+.log-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px;
+    font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+    font-size: 11px;
+    line-height: 1.5;
+}
+
+.log-welcome {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--text-muted);
+}
+
+.log-welcome .log-icon {
+    font-size: 32px;
+    display: block;
+    margin-bottom: 12px;
+}
+
+.log-welcome p {
+    margin: 4px 0;
+}
+
+.log-welcome .log-hint {
+    font-size: 10px;
+    opacity: 0.8;
+}
+
+.log-entry {
+    margin-bottom: 8px;
+    padding: 8px 10px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-primary);
+    border-left: 3px solid transparent;
+    animation: logSlideIn 0.2s ease;
+}
+
+@keyframes logSlideIn {
+    from {
+        opacity: 0;
+        transform: translateX(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.log-entry.info {
+    border-left-color: #3b82f6;
+}
+
+.log-entry.success {
+    border-left-color: #22c55e;
+}
+
+.log-entry.warning {
+    border-left-color: #f59e0b;
+}
+
+.log-entry.error {
+    border-left-color: #ef4444;
+}
+
+.log-entry.tool {
+    border-left-color: #8b5cf6;
+}
+
+.log-entry.llm {
+    border-left-color: #06b6d4;
+}
+
+.log-timestamp {
+    font-size: 9px;
+    color: var(--text-muted);
+    margin-bottom: 2px;
+}
+
+.log-type {
+    display: inline-block;
+    font-size: 9px;
+    font-weight: 600;
+    text-transform: uppercase;
+    padding: 1px 4px;
+    border-radius: 3px;
+    margin-right: 6px;
+}
+
+.log-entry.info .log-type { background: rgba(59, 130, 246, 0.15); color: #3b82f6; }
+.log-entry.success .log-type { background: rgba(34, 197, 94, 0.15); color: #22c55e; }
+.log-entry.warning .log-type { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
+.log-entry.error .log-type { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+.log-entry.tool .log-type { background: rgba(139, 92, 246, 0.15); color: #8b5cf6; }
+.log-entry.llm .log-type { background: rgba(6, 182, 212, 0.15); color: #06b6d4; }
+
+.log-message {
+    color: var(--text-primary);
+    word-break: break-word;
+}
+
+.log-details {
+    margin-top: 6px;
+    padding: 6px 8px;
+    background: var(--bg-tertiary);
+    border-radius: 4px;
+    font-size: 10px;
+    color: var(--text-secondary);
+    font-family: monospace;
+    white-space: pre-wrap;
+    max-height: 150px;
+    overflow-y: auto;
+}
+
+.log-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    border-top: 1px solid var(--border-color);
+    background: var(--bg-tertiary);
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+.log-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--text-muted);
+}
+
+.log-indicator.active {
+    background: #22c55e;
+    animation: pulse 1.5s infinite;
+}
+
+.log-indicator.paused {
+    background: #f59e0b;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+/* Log Toggle Button */
+.log-show-btn {
+    position: fixed;
+    right: 20px;
+    bottom: 100px;
+    width: 44px;
+    height: 44px;
+    border: none;
+    background: var(--primary);
+    color: white;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    box-shadow: var(--shadow-lg);
+    transition: all 0.3s ease;
+    z-index: 100;
+}
+
+.log-show-btn:hover {
+    transform: scale(1.1);
+    background: var(--primary-hover);
+}
+
+.log-show-btn.hidden {
+    display: none;
+}
+
+/* Log count badge */
+.log-show-btn[data-count]:not([data-count="0"])::after {
+    content: attr(data-count);
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    background: #ef4444;
+    color: white;
+    font-size: 10px;
+    font-weight: 600;
+    border-radius: 9px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Mobile adjustments for log sidebar */
+@media (max-width: 1024px) {
+    .log-sidebar {
+        position: fixed;
+        right: 0;
+        top: 0;
+        bottom: 0;
+        width: 300px;
+        z-index: 150;
+        box-shadow: var(--shadow-lg);
+    }
+
+    .log-sidebar.collapsed {
+        transform: translateX(100%);
+    }
+
+    .main.log-open {
+        filter: brightness(0.95);
+    }
+}
+
+@media (max-width: 480px) {
+    .log-sidebar {
+        width: 100%;
+    }
+}
+
 /* Responsive Design */
 @media (max-width: 768px) {
     .sidebar {

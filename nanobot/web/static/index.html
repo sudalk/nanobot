@@ -11,7 +11,7 @@
 </head>
 <body>
     <div class="app">
-        <!-- Sidebar -->
+        <!-- Left Sidebar -->
         <aside class="sidebar" id="sidebar">
             <div class="sidebar-header">
                 <h1 class="logo">🤖 nanobot</h1>
@@ -94,6 +94,40 @@
                 </div>
             </div>
         </main>
+
+        <!-- Right Log Sidebar -->
+        <aside class="log-sidebar" id="logSidebar">
+            <div class="log-header">
+                <h3>Agent 日志</h3>
+                <div class="log-controls">
+                    <button class="log-toggle-btn" id="logToggleBtn" title="暂停/继续">
+                        ⏸
+                    </button>
+                    <button class="log-clear-btn" id="logClearBtn" title="清空">
+                        🗑
+                    </button>
+                    <button class="log-close-btn" id="logCloseBtn" title="关闭">
+                        ✕
+                    </button>
+                </div>
+            </div>
+            <div class="log-content" id="logContent">
+                <div class="log-welcome">
+                    <span class="log-icon">📋</span>
+                    <p>等待对话开始...</p>
+                    <p class="log-hint">日志将实时显示 Agent 的调用过程</p>
+                </div>
+            </div>
+            <div class="log-status" id="logStatus">
+                <span class="log-indicator" id="logIndicator"></span>
+                <span class="log-status-text" id="logStatusText">就绪</span>
+            </div>
+        </aside>
+
+        <!-- Log Toggle Button (shown when sidebar is closed) -->
+        <button class="log-show-btn" id="logShowBtn" title="显示日志">
+            📋
+        </button>
     </div>
 
     <script src="/static/app.js"></script>

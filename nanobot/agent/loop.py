@@ -35,6 +35,25 @@ class AgentLoop:
     5. Sends responses back
     """
 
+    _log_callback: callable | None = None
+
+    @classmethod
+    def set_log_callback(cls, callback: callable | None):
+        """Set a callback for sending logs to clients."""
+        cls._log_callback = callback
+
+    @classmethod
+    def send_log(cls, level: str, category: str, message: str, details: str | None = None):
+        """Send a log entry to clients if callback is set."""
+        if cls._log_callback:
+            cls._log_callback({
+                "level": level,
+                "category": category,
+                "message": message,
+                "details": details,
+                "timestamp": asyncio.get_event_loop().time() if asyncio.get_event_loop().is_running() else 0,
+            })
+
     def __init__(
         self,
         bus: MessageBus,
@@ -285,10 +304,12 @@ class AgentLoop:
             return await self._process_system_message(msg, override_model)
 
         logger.info(f"Processing message from {msg.channel}:{msg.sender_id}")
+        self.send_log("info", "general", f"开始处理消息", f"Channel: {msg.channel}\nModel: {override_model or 'default'}")
 
         # Use override model if provided, otherwise use default
         provider, model = self._get_provider_for_model(override_model)
         logger.info(f"[AgentLoop] Using model: {model}, provider: {provider.__class__.__name__}")
+        self.send_log("info", "llm", f"使用模型: {model}")
 
         # Check if using MiniMax model (for MCP tool routing)
         is_minimax = "minimax" in model.lower()
@@ -389,8 +410,11 @@ class AgentLoop:
         iteration = 0
         final_content = None
 
+        self.send_log("info", "general", f"开始 Agent 循环 (最多 {self.max_iterations} 轮)")
+
         while iteration < self.max_iterations:
             iteration += 1
+            self.send_log("info", "llm", f"第 {iteration} 轮: 调用 LLM")
 
             # Call LLM with selected provider and model
             response = await provider.chat(
@@ -398,6 +422,8 @@ class AgentLoop:
                 tools=self.tools.get_definitions(),
                 model=model
             )
+
+            self.send_log("success", "llm", f"LLM 响应完成", f"工具调用: {len(response.tool_calls) if response.has_tool_calls else 0}")
             
             # Handle tool calls
             if response.has_tool_calls:
@@ -421,18 +447,23 @@ class AgentLoop:
                 for tool_call in response.tool_calls:
                     args_str = json.dumps(tool_call.arguments)
                     logger.debug(f"Executing tool: {tool_call.name} with arguments: {args_str}")
+                    self.send_log("tool", "tool", f"执行工具: {tool_call.name}", f"参数: {args_str[:200]}..." if len(args_str) > 200 else f"参数: {args_str}")
                     result = await self.tools.execute(tool_call.name, tool_call.arguments)
+                    result_preview = str(result)[:150] + "..." if len(str(result)) > 150 else str(result)
+                    self.send_log("success", "tool", f"工具完成: {tool_call.name}", f"结果: {result_preview}")
                     messages = self.context.add_tool_result(
                         messages, tool_call.id, tool_call.name, result
                     )
             else:
                 # No tool calls, we're done
                 final_content = response.content
+                self.send_log("success", "general", f"Agent 循环完成", f"共 {iteration} 轮")
                 break
-        
+
         if final_content is None:
             final_content = "I've completed processing but have no response to give."
-        
+            self.send_log("warning", "general", "Agent 达到最大迭代次数", f"{self.max_iterations} 轮")
+
         # Save to session
         session.add_message("user", msg.content)
         session.add_message("assistant", final_content)

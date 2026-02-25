@@ -434,6 +434,26 @@ class WebChannel(BaseChannel):
             logger.info(f"[WebChannel] Received model from client: {data.get('model')}")
             logger.info(f"[WebChannel] Using model: {model}")
 
+            # Set up log callback to send logs to this client
+            from nanobot.agent.loop import AgentLoop
+            import time
+
+            def send_log_to_client(log_data):
+                try:
+                    # Add timestamp if not present
+                    if "timestamp" not in log_data or log_data["timestamp"] == 0:
+                        log_data["timestamp"] = time.time()
+
+                    asyncio.create_task(websocket.send_json({
+                        "type": "log",
+                        "log": log_data,
+                        "session_id": session_id,
+                    }))
+                except Exception:
+                    pass  # Ignore send errors
+
+            AgentLoop.set_log_callback(send_log_to_client)
+
             response = await self.agent.process_direct(
                 content=message or "[图片]",  # Use placeholder if only image
                 session_key=session_key,
@@ -442,6 +462,9 @@ class WebChannel(BaseChannel):
                 media=media if media else None,
                 model=model,
             )
+
+            # Clear log callback
+            AgentLoop.set_log_callback(None)
             logger.info(f"[WebChannel] Got response from agent: {response[:50]}...")
 
             # Send response in chunks for streaming effect

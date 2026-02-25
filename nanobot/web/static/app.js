@@ -27,6 +27,11 @@ const state = {
     accumulatedResponse: '',
     tasks: new Map(), // Track active tasks
     currentImage: null, // Current selected image (base64)
+    // Log state
+    logPaused: false,
+    logEntries: [],
+    logUnreadCount: 0,
+    logSidebarVisible: true,
 };
 
 // DOM Elements
@@ -52,6 +57,16 @@ const elements = {
     removeImageBtn: document.getElementById('removeImageBtn'),
     modelSelect: document.getElementById('modelSelect'),
     modelDescription: document.getElementById('modelDescription'),
+    // Log sidebar elements
+    logSidebar: document.getElementById('logSidebar'),
+    logContent: document.getElementById('logContent'),
+    logStatus: document.getElementById('logStatus'),
+    logIndicator: document.getElementById('logIndicator'),
+    logStatusText: document.getElementById('logStatusText'),
+    logToggleBtn: document.getElementById('logToggleBtn'),
+    logClearBtn: document.getElementById('logClearBtn'),
+    logCloseBtn: document.getElementById('logCloseBtn'),
+    logShowBtn: document.getElementById('logShowBtn'),
 };
 
 // Initialize the app
@@ -92,6 +107,9 @@ function init() {
 
     // Setup model selector
     setupModelSelector();
+
+    // Setup log sidebar
+    setupLogSidebar();
 
     console.log('[nanobot] Initialization complete');
 }
@@ -463,6 +481,10 @@ function handleWebSocketMessage(data) {
 
         case 'task_update':
             handleTaskUpdate(data.task);
+            break;
+
+        case 'log':
+            handleLogEntry(data.log);
             break;
 
         case 'pong':
@@ -1019,3 +1041,184 @@ setInterval(() => {
         state.ws.send(JSON.stringify({ type: 'ping' }));
     }
 }, 30000);
+
+// ========== Log Sidebar Functions ==========
+
+function setupLogSidebar() {
+    // Load sidebar visibility preference
+    const savedVisibility = localStorage.getItem('logSidebarVisible');
+    if (savedVisibility !== null) {
+        state.logSidebarVisible = savedVisibility === 'true';
+    }
+
+    // Apply initial state
+    updateLogSidebarVisibility();
+
+    // Event listeners
+    if (elements.logToggleBtn) {
+        elements.logToggleBtn.addEventListener('click', toggleLogPause);
+    }
+
+    if (elements.logClearBtn) {
+        elements.logClearBtn.addEventListener('click', clearLogEntries);
+    }
+
+    if (elements.logCloseBtn) {
+        elements.logCloseBtn.addEventListener('click', () => {
+            state.logSidebarVisible = false;
+            updateLogSidebarVisibility();
+        });
+    }
+
+    if (elements.logShowBtn) {
+        elements.logShowBtn.addEventListener('click', () => {
+            state.logSidebarVisible = true;
+            state.logUnreadCount = 0;
+            updateLogSidebarVisibility();
+            updateLogUnreadBadge();
+        });
+    }
+}
+
+function updateLogSidebarVisibility() {
+    if (!elements.logSidebar || !elements.logShowBtn) return;
+
+    if (state.logSidebarVisible) {
+        elements.logSidebar.classList.remove('collapsed');
+        elements.logShowBtn.classList.add('hidden');
+        state.logUnreadCount = 0;
+        updateLogUnreadBadge();
+    } else {
+        elements.logSidebar.classList.add('collapsed');
+        elements.logShowBtn.classList.remove('hidden');
+    }
+
+    localStorage.setItem('logSidebarVisible', state.logSidebarVisible);
+}
+
+function toggleLogPause() {
+    state.logPaused = !state.logPaused;
+    if (elements.logToggleBtn) {
+        elements.logToggleBtn.textContent = state.logPaused ? '▶' : '⏸';
+        elements.logToggleBtn.title = state.logPaused ? '继续' : '暂停';
+    }
+    if (elements.logIndicator) {
+        elements.logIndicator.className = 'log-indicator ' + (state.logPaused ? 'paused' : 'active');
+    }
+    if (elements.logStatusText) {
+        elements.logStatusText.textContent = state.logPaused ? '已暂停' : '运行中';
+    }
+}
+
+function clearLogEntries() {
+    state.logEntries = [];
+    if (elements.logContent) {
+        elements.logContent.innerHTML = `
+            <div class="log-welcome">
+                <span class="log-icon">📋</span>
+                <p>日志已清空</p>
+                <p class="log-hint">等待新的日志消息...</p>
+            </div>
+        `;
+    }
+}
+
+function handleLogEntry(logData) {
+    if (state.logPaused) return;
+
+    const entry = {
+        id: generateId(),
+        timestamp: logData.timestamp || new Date().toISOString(),
+        type: logData.level || 'info',
+        category: logData.category || 'general',
+        message: logData.message || '',
+        details: logData.details || null,
+    };
+
+    state.logEntries.push(entry);
+
+    // Limit entries to prevent memory issues
+    if (state.logEntries.length > 500) {
+        state.logEntries = state.logEntries.slice(-500);
+    }
+
+    // If sidebar is hidden, increment unread count
+    if (!state.logSidebarVisible) {
+        state.logUnreadCount++;
+        updateLogUnreadBadge();
+    }
+
+    // Add to UI
+    addLogEntryToUI(entry);
+
+    // Update status
+    updateLogStatus('运行中', true);
+}
+
+function addLogEntryToUI(entry) {
+    if (!elements.logContent) return;
+
+    // Remove welcome message if it exists
+    const welcomeMsg = elements.logContent.querySelector('.log-welcome');
+    if (welcomeMsg) {
+        welcomeMsg.remove();
+    }
+
+    const entryEl = document.createElement('div');
+    entryEl.className = `log-entry ${entry.type}`;
+    entryEl.dataset.id = entry.id;
+
+    const time = new Date(entry.timestamp).toLocaleTimeString('zh-CN', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+    });
+
+    const typeLabels = {
+        info: '信息',
+        success: '成功',
+        warning: '警告',
+        error: '错误',
+        tool: '工具',
+        llm: 'LLM',
+    };
+
+    entryEl.innerHTML = `
+        <div class="log-timestamp">${time}</div>
+        <div class="log-message">
+            <span class="log-type">${typeLabels[entry.type] || entry.type}</span>
+            ${escapeHtml(entry.message)}
+        </div>
+        ${entry.details ? `<div class="log-details">${escapeHtml(entry.details)}</div>` : ''}
+    `;
+
+    elements.logContent.appendChild(entryEl);
+
+    // Auto-scroll to bottom
+    elements.logContent.scrollTop = elements.logContent.scrollHeight;
+}
+
+function updateLogStatus(text, isActive) {
+    if (elements.logStatusText) {
+        elements.logStatusText.textContent = text;
+    }
+    if (elements.logIndicator) {
+        elements.logIndicator.className = 'log-indicator ' + (isActive ? 'active' : '');
+    }
+}
+
+function updateLogUnreadBadge() {
+    if (!elements.logShowBtn) return;
+
+    if (state.logUnreadCount > 0) {
+        elements.logShowBtn.setAttribute('data-count', state.logUnreadCount > 99 ? '99+' : state.logUnreadCount);
+    } else {
+        elements.logShowBtn.removeAttribute('data-count');
+    }
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
