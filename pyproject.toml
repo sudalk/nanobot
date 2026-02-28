@@ -33,6 +33,7 @@ dependencies = [
     "fastapi>=0.100.0",
     "uvicorn[standard]>=0.23.0",
     "aiofiles>=23.0.0",
+    "zhipuai>=4.0.0",
 ]
 
 [project.optional-dependencies]

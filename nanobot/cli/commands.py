@@ -344,6 +344,8 @@ def web(
         )
         console.print("[green]✓[/green] MiniMax provider configured")
 
+    session_manager = SessionManager(config.workspace_path)
+
     agent = AgentLoop(
         bus=bus,
         provider=provider,
@@ -353,9 +355,8 @@ def web(
         brave_api_key=config.tools.web.search.api_key or None,
         exec_config=config.tools.exec,
         providers=providers,
+        sessions=session_manager,
     )
-
-    session_manager = SessionManager(config.workspace_path)
 
     web_channel = WebChannel(
         config=config.channels.web,

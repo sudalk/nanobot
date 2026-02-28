@@ -490,6 +490,70 @@ body {
     font-weight: 600;
 }
 
+/* Image display in messages */
+.message-image-container {
+    margin: 12px 0;
+    padding: 12px;
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-md);
+    max-width: 100%;
+}
+
+.message-image-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.image-icon {
+    font-size: 20px;
+}
+
+.image-filename {
+    font-size: 13px;
+    color: var(--text-secondary);
+    word-break: break-all;
+}
+
+.message-image-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    background: var(--primary);
+    color: white;
+    border-radius: var(--radius-sm);
+    text-decoration: none;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.message-image-link:hover {
+    background: var(--primary-hover, var(--primary));
+}
+
+/* Online image display */
+.message-image-container.online {
+    padding: 8px;
+    background: transparent;
+}
+
+.message-inline-image {
+    max-width: 100%;
+    max-height: 400px;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+    display: block;
+}
+
+.message-inline-image:hover {
+    transform: scale(1.02);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
 /* Code Block Actions */
 .code-block {
     position: relative;
@@ -717,7 +781,153 @@ body {
     color: var(--text-muted);
 }
 
-/* Log Sidebar Styles */
+/* Message Thinking/Logs Styles */
+.message-thinking {
+    margin: 12px 0;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: var(--bg-tertiary);
+    overflow: hidden;
+}
+
+.message-thinking-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    background: var(--bg-secondary);
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.message-thinking-header:hover {
+    background: var(--border-color);
+}
+
+.message-thinking-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+.message-thinking-icon {
+    width: 16px;
+    height: 16px;
+    animation: thinking-pulse 2s ease-in-out infinite;
+}
+
+@keyframes thinking-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.message-thinking-toggle {
+    font-size: 12px;
+    color: var(--text-muted);
+    transition: transform 0.2s;
+}
+
+.message-thinking.expanded .message-thinking-toggle {
+    transform: rotate(180deg);
+}
+
+.message-thinking-content {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease;
+}
+
+.message-thinking.expanded .message-thinking-content {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.message-thinking-logs {
+    padding: 12px;
+    font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+    font-size: 11px;
+    line-height: 1.5;
+}
+
+.message-thinking-log-entry {
+    margin-bottom: 8px;
+    padding: 6px 8px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-primary);
+    border-left: 3px solid transparent;
+    animation: logTypeIn 0.3s ease;
+}
+
+@keyframes logTypeIn {
+    from {
+        opacity: 0;
+        transform: translateX(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+/* Cursor blink for typewriter effect */
+.thinking-log-text.typing::after {
+    content: '|';
+    animation: cursorBlink 1s infinite;
+    color: var(--primary);
+    font-weight: bold;
+}
+
+/* Main message typing indicator */
+.message.assistant .message-body.generating::after {
+    content: '|';
+    animation: cursorBlink 1s infinite;
+    color: var(--primary);
+    font-weight: bold;
+}
+
+@keyframes cursorBlink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+}
+
+.message-thinking-log-entry.info { border-left-color: #3b82f6; }
+.message-thinking-log-entry.success { border-left-color: #22c55e; }
+.message-thinking-log-entry.warning { border-left-color: #f59e0b; }
+.message-thinking-log-entry.error { border-left-color: #ef4444; }
+.message-thinking-log-entry.tool { border-left-color: #8b5cf6; }
+.message-thinking-log-entry.llm { border-left-color: #06b6d4; }
+
+.message-thinking-log-time {
+    font-size: 9px;
+    color: var(--text-muted);
+    margin-bottom: 2px;
+}
+
+.message-thinking-log-message {
+    color: var(--text-primary);
+}
+
+.message-thinking-log-type {
+    display: inline-block;
+    font-size: 9px;
+    font-weight: 600;
+    text-transform: uppercase;
+    padding: 1px 4px;
+    border-radius: 3px;
+    margin-right: 6px;
+}
+
+.message-thinking-log-entry.info .message-thinking-log-type { background: rgba(59, 130, 246, 0.15); color: #3b82f6; }
+.message-thinking-log-entry.success .message-thinking-log-type { background: rgba(34, 197, 94, 0.15); color: #22c55e; }
+.message-thinking-log-entry.warning .message-thinking-log-type { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
+.message-thinking-log-entry.error .message-thinking-log-type { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+.message-thinking-log-entry.tool .message-thinking-log-type { background: rgba(139, 92, 246, 0.15); color: #8b5cf6; }
+.message-thinking-log-entry.llm .message-thinking-log-type { background: rgba(6, 182, 212, 0.15); color: #06b6d4; }
+
+/* Old Log Sidebar Styles - to be removed */
 .log-sidebar {
     width: 320px;
     background: var(--bg-secondary);

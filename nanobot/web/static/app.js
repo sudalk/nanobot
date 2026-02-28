@@ -27,11 +27,11 @@ const state = {
     accumulatedResponse: '',
     tasks: new Map(), // Track active tasks
     currentImage: null, // Current selected image (base64)
-    // Log state
-    logPaused: false,
-    logEntries: [],
-    logUnreadCount: 0,
-    logSidebarVisible: true,
+    // Log state - now stored per message
+    currentThinkingElement: null,
+    currentThinkingContent: null,
+    currentLogs: [],
+    isThinkingExpanded: false,
 };
 
 // DOM Elements
@@ -57,16 +57,6 @@ const elements = {
     removeImageBtn: document.getElementById('removeImageBtn'),
     modelSelect: document.getElementById('modelSelect'),
     modelDescription: document.getElementById('modelDescription'),
-    // Log sidebar elements
-    logSidebar: document.getElementById('logSidebar'),
-    logContent: document.getElementById('logContent'),
-    logStatus: document.getElementById('logStatus'),
-    logIndicator: document.getElementById('logIndicator'),
-    logStatusText: document.getElementById('logStatusText'),
-    logToggleBtn: document.getElementById('logToggleBtn'),
-    logClearBtn: document.getElementById('logClearBtn'),
-    logCloseBtn: document.getElementById('logCloseBtn'),
-    logShowBtn: document.getElementById('logShowBtn'),
 };
 
 // Initialize the app
@@ -107,9 +97,6 @@ function init() {
 
     // Setup model selector
     setupModelSelector();
-
-    // Setup log sidebar
-    setupLogSidebar();
 
     console.log('[nanobot] Initialization complete');
 }
@@ -180,7 +167,9 @@ function toggleTheme() {
 
 // Session management
 function loadSession() {
+    console.log('[nanobot] loadSession called');
     const savedSessionId = localStorage.getItem('currentSessionId');
+    console.log('[nanobot] Saved session ID:', savedSessionId);
     if (savedSessionId) {
         state.sessionId = savedSessionId;
         // Restore session title
@@ -192,6 +181,8 @@ function loadSession() {
     } else {
         createNewSession();
     }
+    // Always refresh sessions list when loading
+    loadSessions();
 }
 
 // Truncate title to max 20 chars
@@ -225,9 +216,12 @@ function createNewSession() {
 }
 
 async function loadSessionHistory(sessionId) {
+    console.log('[nanobot] loadSessionHistory called with:', sessionId);
     try {
         const response = await fetch(`/api/sessions/${sessionId}/history`);
+        console.log('[nanobot] History response status:', response.status);
         const messages = await response.json();
+        console.log('[nanobot] Loaded messages:', messages.length);
 
         // Clear and prepare container
         elements.messagesContainer.innerHTML = '';
@@ -254,16 +248,19 @@ async function loadSessionHistory(sessionId) {
             });
         }
 
-        scrollToBottom();
+        // Force scroll to bottom when loading history
+        setTimeout(() => scrollToBottom(true), 100);
     } catch (error) {
         console.error('Failed to load session history:', error);
     }
 }
 
 async function loadSessions() {
+    console.log('[nanobot] loadSessions called');
     try {
         const response = await fetch('/api/sessions');
         const sessions = await response.json();
+        console.log('[nanobot] Loaded sessions:', sessions.length, sessions);
         // Sort by updated_at desc (most recent first)
         state.sessions = sessions.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
         renderSessionsList();
@@ -459,6 +456,229 @@ function updateConnectionStatus(connected) {
     elements.statusText.textContent = connected ? '已连接' : '未连接';
 }
 
+// ========== Inline Thinking/Log Functions (must be defined before use) ==========
+
+function getOrCreateThinkingElement() {
+    // If no current message element, create one first
+    if (!state.currentMessageElement) {
+        handleChunk(''); // This will create the message element
+    }
+
+    if (!state.currentMessageElement) return null;
+
+    // Check if thinking element already exists
+    let thinkingEl = state.currentMessageElement.querySelector('.message-thinking');
+
+    if (!thinkingEl) {
+        // Create new thinking element
+        thinkingEl = document.createElement('div');
+        thinkingEl.className = 'message-thinking';
+        thinkingEl.innerHTML = `
+            <div class="message-thinking-header" onclick="toggleThinking(this)">
+                <div class="message-thinking-title">
+                    <svg class="message-thinking-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <path d="M12 6v6l4 2"/>
+                    </svg>
+                    <span class="thinking-status">思考中...</span>
+                </div>
+                <span class="message-thinking-toggle">▼</span>
+            </div>
+            <div class="message-thinking-content">
+                <div class="message-thinking-logs"></div>
+            </div>
+        `;
+        // Add cursor pointer style to header
+        const header = thinkingEl.querySelector('.message-thinking-header');
+        if (header) {
+            header.style.cursor = 'pointer';
+        }
+
+        // Insert before message-body
+        const messageContent = state.currentMessageElement.querySelector('.message-content');
+        const messageBody = state.currentMessageElement.querySelector('.message-body');
+        if (messageContent && messageBody) {
+            messageContent.insertBefore(thinkingEl, messageBody);
+        }
+
+        state.currentThinkingElement = thinkingEl;
+        state.currentThinkingContent = thinkingEl.querySelector('.message-thinking-logs');
+
+        // Auto-expand on first log
+        expandThinking(thinkingEl);
+    }
+
+    return state.currentThinkingElement;
+}
+
+function addLogEntryToThinking(entry) {
+    if (!state.currentThinkingContent) return;
+
+    const entryEl = document.createElement('div');
+    entryEl.className = `message-thinking-log-entry ${entry.type}`;
+
+    const time = new Date(entry.timestamp).toLocaleTimeString('zh-CN', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+    });
+
+    const typeLabels = {
+        info: '信息',
+        success: '成功',
+        warning: '警告',
+        error: '错误',
+        tool: '工具',
+        llm: 'LLM',
+    };
+
+    // Create structure but with empty message for typewriter effect
+    entryEl.innerHTML = `
+        <div class="message-thinking-log-time">${time}</div>
+        <div class="message-thinking-log-message">
+            <span class="message-thinking-log-type">${typeLabels[entry.type] || entry.type}</span>
+            <span class="thinking-log-text"></span>
+        </div>
+    `;
+
+    state.currentThinkingContent.appendChild(entryEl);
+
+    // Typewriter effect for the message
+    const textEl = entryEl.querySelector('.thinking-log-text');
+    const message = escapeHtml(entry.message);
+    typeWriterEffect(textEl, message, 15);
+
+    // Auto-scroll thinking content to bottom
+    const contentContainer = state.currentThinkingElement?.querySelector('.message-thinking-content');
+    if (contentContainer) {
+        contentContainer.scrollTo({
+            top: contentContainer.scrollHeight,
+            behavior: 'smooth'
+        });
+    }
+
+    // Also scroll main container to show the new log
+    smoothScrollToBottom();
+}
+
+function typeWriterEffect(element, text, speed = 20) {
+    let i = 0;
+    element.textContent = '';
+    element.classList.add('typing');
+
+    function type() {
+        if (i < text.length) {
+            element.textContent += text.charAt(i);
+            i++;
+            setTimeout(type, speed);
+        } else {
+            // Remove typing class when done (removes cursor)
+            element.classList.remove('typing');
+        }
+    }
+
+    type();
+}
+
+function updateThinkingHeader(isActive, thinkingEl) {
+    const el = thinkingEl || state.currentThinkingElement;
+    if (!el) return;
+
+    const statusEl = el.querySelector('.thinking-status');
+    const iconEl = el.querySelector('.message-thinking-icon');
+
+    if (statusEl) {
+        statusEl.textContent = isActive ? '思考中...' : '思考完成';
+    }
+
+    if (iconEl) {
+        if (isActive) {
+            iconEl.style.animation = 'thinking-pulse 2s ease-in-out infinite';
+        } else {
+            iconEl.style.animation = 'none';
+        }
+    }
+}
+
+function toggleThinking(element) {
+    // If called from onclick, 'this' context won't work properly
+    // Instead, find the closest .message-thinking from the clicked element
+    const thinkingEl = element ? element.closest('.message-thinking') : state.currentThinkingElement;
+    if (!thinkingEl) return;
+
+    const isExpanded = thinkingEl.classList.contains('expanded');
+    console.log('[nanobot] Toggling thinking section, currently expanded:', isExpanded);
+
+    if (isExpanded) {
+        collapseThinking(thinkingEl);
+    } else {
+        expandThinking(thinkingEl);
+    }
+}
+
+function expandThinking(thinkingEl) {
+    // If no element provided, use current state element
+    const el = thinkingEl || state.currentThinkingElement;
+    if (!el) return;
+
+    el.classList.add('expanded');
+    if (el === state.currentThinkingElement) {
+        state.isThinkingExpanded = true;
+    }
+
+    // Update toggle icon
+    const toggleEl = el.querySelector('.message-thinking-toggle');
+    if (toggleEl) {
+        toggleEl.textContent = '▼';
+    }
+}
+
+function collapseThinking(thinkingEl) {
+    // If no element provided, use current state element
+    const el = thinkingEl || state.currentThinkingElement;
+    if (!el) return;
+
+    el.classList.remove('expanded');
+    if (el === state.currentThinkingElement) {
+        state.isThinkingExpanded = false;
+    }
+    updateThinkingHeader(false, el);
+
+    // Update toggle icon
+    const toggleEl = el.querySelector('.message-thinking-toggle');
+    if (toggleEl) {
+        toggleEl.textContent = '▶';
+    }
+}
+
+function handleLogEntry(logData) {
+    // Create or get the thinking element for current message
+    const thinkingElement = getOrCreateThinkingElement();
+    if (!thinkingElement) return;
+
+    const entry = {
+        id: generateId(),
+        timestamp: logData.timestamp || new Date().toISOString(),
+        type: logData.level || 'info',
+        category: logData.category || 'general',
+        message: logData.message || '',
+        details: logData.details || null,
+    };
+
+    state.currentLogs.push(entry);
+
+    // Limit entries to prevent memory issues
+    if (state.currentLogs.length > 100) {
+        state.currentLogs = state.currentLogs.slice(-100);
+    }
+
+    // Add log entry to the thinking content
+    addLogEntryToThinking(entry);
+
+    // Update thinking header to show active state
+    updateThinkingHeader(true);
+}
+
 function handleWebSocketMessage(data) {
     console.log(`[nanobot] Handling message type: ${data.type}`, data);
 
@@ -484,6 +704,7 @@ function handleWebSocketMessage(data) {
             break;
 
         case 'log':
+            console.log('[nanobot] Received log entry:', data.log);
             handleLogEntry(data.log);
             break;
 
@@ -523,6 +744,9 @@ function handleChunk(content) {
         return;
     }
 
+    // Add generating class for cursor effect
+    messageBody.classList.add('generating');
+
     try {
         const rendered = renderMarkdown(state.accumulatedResponse);
         console.log('[nanobot] Rendered HTML length:', rendered.length);
@@ -545,14 +769,35 @@ function handleChunk(content) {
         });
     }
 
-    scrollToBottom(true);  // 强制滚动到底部
+    // Update thinking header to show we're still generating
+    updateThinkingHeader(true);
+
+    // Smooth scroll to bottom
+    smoothScrollToBottom();
 }
 
 function handleComplete(fullResponse) {
     console.log('[nanobot] Response complete, length:', fullResponse?.length || 0);
     state.isTyping = false;
+
+    // Remove generating class from message body
+    if (state.currentMessageElement) {
+        const messageBody = state.currentMessageElement.querySelector('.message-body');
+        if (messageBody) {
+            messageBody.classList.remove('generating');
+        }
+    }
+
+    // Collapse the thinking section when complete
+    if (state.currentThinkingElement) {
+        collapseThinking();
+        // Note: Don't clear currentThinkingElement here, so user can expand it later
+    }
+
     state.currentMessageElement = null;
     state.accumulatedResponse = '';
+    // Keep currentThinkingElement and currentThinkingContent for later expansion
+    state.currentLogs = [];
 
     // Update sessions list
     loadSessions();
@@ -560,8 +805,25 @@ function handleComplete(fullResponse) {
 
 function handleError(message) {
     state.isTyping = false;
+
+    // Remove generating class from message body
+    if (state.currentMessageElement) {
+        const messageBody = state.currentMessageElement.querySelector('.message-body');
+        if (messageBody) {
+            messageBody.classList.remove('generating');
+        }
+    }
+
+    // Collapse the thinking section when error
+    if (state.currentThinkingElement) {
+        collapseThinking();
+    }
+
     state.currentMessageElement = null;
     state.accumulatedResponse = '';
+    state.currentThinkingElement = null;
+    state.currentThinkingContent = null;
+    state.currentLogs = [];
 
     appendMessage('assistant', `❌ 错误: ${message}`, false);
 }
@@ -802,7 +1064,7 @@ function createMessageElement(role, content) {
                 <span class="message-author">${author}</span>
                 <span class="message-time">${time}</span>
             </div>
-            <div class="message-body">${content ? renderMarkdown(content) : '<div class="typing-indicator"><span></span><span></span><span></span></div>'}</div>
+            <div class="message-body">${content ? processContent(content) : '<div class="typing-indicator"><span></span><span></span><span></span></div>'}</div>
         </div>
     `;
 
@@ -829,6 +1091,73 @@ function renderMarkdown(text) {
         console.error('[nanobot] Error in marked.parse:', error);
         return escapeHtml(text).replace(/\n/g, '<br>');
     }
+}
+
+// Process content to detect and display local images and online image URLs
+function processContent(content) {
+    let processed = renderMarkdown(content);
+
+    // 1. First priority: Detect local image paths
+    // Match various formats: 📁 路径, 💾 路径, 图片已保存: 路径, 文件已保存到: 路径
+    const localImageRegex = /(?:[📁💾]\s*(?:文件已保存到|图片已保存)?[:：]\s*)([^\n]+\.(?:png|jpg|jpeg|gif|webp|svg))/gi;
+    const localMatches = [];
+    let match;
+
+    while ((match = localImageRegex.exec(content)) !== null) {
+        localMatches.push({path: match[1].trim(), index: match.index, length: match[0].length});
+    }
+
+    // Process local images in reverse order
+    for (let i = localMatches.length - 1; i >= 0; i--) {
+        const {path} = localMatches[i];
+        const filename = path.split('/').pop();
+        // Convert local path to HTTP URL for the static file server
+        // /Users/likang/.nanobot/workspace/images/xxx.png -> /images/xxx.png
+        const httpUrl = '/images/' + filename;
+        const imgHtml = `<div class="message-image-container" style="padding:16px;background:var(--bg-tertiary);border-radius:var(--radius-md);">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+                <span style="font-size:32px;">🖼️</span>
+                <div style="flex:1;min-width:0;">
+                    <div style="font-weight:600;color:var(--text-primary);margin-bottom:4px;">图片已保存</div>
+                    <code style="font-size:11px;color:var(--text-secondary);word-break:break-all;">${path}</code>
+                </div>
+            </div>
+            <div style="display:flex;gap:8px;">
+                <button onclick="navigator.clipboard.writeText('${path.replace(/'/g, "\\'")}');this.textContent='已复制!';setTimeout(()=>this.textContent='复制路径',2000)"
+                    class="message-image-link" style="border:none;cursor:pointer;">复制路径</button>
+                <a href="${httpUrl}" target="_blank" class="message-image-link">查看图片</a>
+            </div>
+        </div>`;
+        processed = processed.substring(0, localMatches[i].index) + imgHtml + processed.substring(localMatches[i].index + localMatches[i].length);
+    }
+
+    // 2. Second priority: Detect online URLs with 🖼️ prefix
+    const imageUrlRegex = /🖼️\s*(https?:\/\/[^\s\n]+)/g;
+    const imageUrls = [];
+
+    while ((match = imageUrlRegex.exec(content)) !== null) {
+        imageUrls.push(match[1].trim());
+    }
+
+    // Remove the 🖼️ URL text from processed content and add image containers
+    if (imageUrls.length > 0) {
+        // Replace 🖼️ URL patterns in processed HTML
+        imageUrls.forEach(url => {
+            const cleanUrl = url.replace(/[)"]+$/, '');
+            const urlPattern = new RegExp(`🖼️\\s*${cleanUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'g');
+            processed = processed.replace(urlPattern, '');
+
+            // Add image container at the end
+            processed += `<div class="message-image-container online">
+                <div style="padding:20px;text-align:center;">
+                    <div style="font-size:40px;margin-bottom:10px;">🖼️</div>
+                    <a href="${cleanUrl}" target="_blank" class="message-image-link">查看生成的图片</a>
+                </div>
+            </div>`;
+        });
+    }
+
+    return processed;
 }
 
 // Escape HTML to prevent XSS
@@ -963,6 +1292,14 @@ function scrollToBottom(force = false) {
     }
 }
 
+function smoothScrollToBottom() {
+    const container = elements.messagesContainer;
+    container.scrollTo({
+        top: container.scrollHeight,
+        behavior: 'smooth'
+    });
+}
+
 // Check if should show scroll to bottom button
 function updateScrollButton() {
     const container = elements.messagesContainer;
@@ -1041,184 +1378,3 @@ setInterval(() => {
         state.ws.send(JSON.stringify({ type: 'ping' }));
     }
 }, 30000);
-
-// ========== Log Sidebar Functions ==========
-
-function setupLogSidebar() {
-    // Load sidebar visibility preference
-    const savedVisibility = localStorage.getItem('logSidebarVisible');
-    if (savedVisibility !== null) {
-        state.logSidebarVisible = savedVisibility === 'true';
-    }
-
-    // Apply initial state
-    updateLogSidebarVisibility();
-
-    // Event listeners
-    if (elements.logToggleBtn) {
-        elements.logToggleBtn.addEventListener('click', toggleLogPause);
-    }
-
-    if (elements.logClearBtn) {
-        elements.logClearBtn.addEventListener('click', clearLogEntries);
-    }
-
-    if (elements.logCloseBtn) {
-        elements.logCloseBtn.addEventListener('click', () => {
-            state.logSidebarVisible = false;
-            updateLogSidebarVisibility();
-        });
-    }
-
-    if (elements.logShowBtn) {
-        elements.logShowBtn.addEventListener('click', () => {
-            state.logSidebarVisible = true;
-            state.logUnreadCount = 0;
-            updateLogSidebarVisibility();
-            updateLogUnreadBadge();
-        });
-    }
-}
-
-function updateLogSidebarVisibility() {
-    if (!elements.logSidebar || !elements.logShowBtn) return;
-
-    if (state.logSidebarVisible) {
-        elements.logSidebar.classList.remove('collapsed');
-        elements.logShowBtn.classList.add('hidden');
-        state.logUnreadCount = 0;
-        updateLogUnreadBadge();
-    } else {
-        elements.logSidebar.classList.add('collapsed');
-        elements.logShowBtn.classList.remove('hidden');
-    }
-
-    localStorage.setItem('logSidebarVisible', state.logSidebarVisible);
-}
-
-function toggleLogPause() {
-    state.logPaused = !state.logPaused;
-    if (elements.logToggleBtn) {
-        elements.logToggleBtn.textContent = state.logPaused ? '▶' : '⏸';
-        elements.logToggleBtn.title = state.logPaused ? '继续' : '暂停';
-    }
-    if (elements.logIndicator) {
-        elements.logIndicator.className = 'log-indicator ' + (state.logPaused ? 'paused' : 'active');
-    }
-    if (elements.logStatusText) {
-        elements.logStatusText.textContent = state.logPaused ? '已暂停' : '运行中';
-    }
-}
-
-function clearLogEntries() {
-    state.logEntries = [];
-    if (elements.logContent) {
-        elements.logContent.innerHTML = `
-            <div class="log-welcome">
-                <span class="log-icon">📋</span>
-                <p>日志已清空</p>
-                <p class="log-hint">等待新的日志消息...</p>
-            </div>
-        `;
-    }
-}
-
-function handleLogEntry(logData) {
-    if (state.logPaused) return;
-
-    const entry = {
-        id: generateId(),
-        timestamp: logData.timestamp || new Date().toISOString(),
-        type: logData.level || 'info',
-        category: logData.category || 'general',
-        message: logData.message || '',
-        details: logData.details || null,
-    };
-
-    state.logEntries.push(entry);
-
-    // Limit entries to prevent memory issues
-    if (state.logEntries.length > 500) {
-        state.logEntries = state.logEntries.slice(-500);
-    }
-
-    // If sidebar is hidden, increment unread count
-    if (!state.logSidebarVisible) {
-        state.logUnreadCount++;
-        updateLogUnreadBadge();
-    }
-
-    // Add to UI
-    addLogEntryToUI(entry);
-
-    // Update status
-    updateLogStatus('运行中', true);
-}
-
-function addLogEntryToUI(entry) {
-    if (!elements.logContent) return;
-
-    // Remove welcome message if it exists
-    const welcomeMsg = elements.logContent.querySelector('.log-welcome');
-    if (welcomeMsg) {
-        welcomeMsg.remove();
-    }
-
-    const entryEl = document.createElement('div');
-    entryEl.className = `log-entry ${entry.type}`;
-    entryEl.dataset.id = entry.id;
-
-    const time = new Date(entry.timestamp).toLocaleTimeString('zh-CN', {
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-    });
-
-    const typeLabels = {
-        info: '信息',
-        success: '成功',
-        warning: '警告',
-        error: '错误',
-        tool: '工具',
-        llm: 'LLM',
-    };
-
-    entryEl.innerHTML = `
-        <div class="log-timestamp">${time}</div>
-        <div class="log-message">
-            <span class="log-type">${typeLabels[entry.type] || entry.type}</span>
-            ${escapeHtml(entry.message)}
-        </div>
-        ${entry.details ? `<div class="log-details">${escapeHtml(entry.details)}</div>` : ''}
-    `;
-
-    elements.logContent.appendChild(entryEl);
-
-    // Auto-scroll to bottom
-    elements.logContent.scrollTop = elements.logContent.scrollHeight;
-}
-
-function updateLogStatus(text, isActive) {
-    if (elements.logStatusText) {
-        elements.logStatusText.textContent = text;
-    }
-    if (elements.logIndicator) {
-        elements.logIndicator.className = 'log-indicator ' + (isActive ? 'active' : '');
-    }
-}
-
-function updateLogUnreadBadge() {
-    if (!elements.logShowBtn) return;
-
-    if (state.logUnreadCount > 0) {
-        elements.logShowBtn.setAttribute('data-count', state.logUnreadCount > 99 ? '99+' : state.logUnreadCount);
-    } else {
-        elements.logShowBtn.removeAttribute('data-count');
-    }
-}
-
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}

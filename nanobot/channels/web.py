@@ -97,6 +97,7 @@ class WebChannel(BaseChannel):
         self.app = FastAPI(title=config.title)
         self._websocket_connections: dict[str, WebSocket] = {}
         self._session_to_client: dict[str, str] = {}  # session_id -> client_id mapping
+        self._pending_tasks: set[asyncio.Task] = set()  # Track pending async tasks
         self._setup_middleware()
         self._setup_routes()
         self._setup_task_callbacks()
@@ -201,6 +202,7 @@ class WebChannel(BaseChannel):
                 return []
             key = f"web:{session_id}"
             session = self.session_manager.get_or_create(key)
+            logger.info(f"[WebChannel] get_session_history: key={key}, messages={len(session.messages)}")
             return session.messages
 
         @self.app.delete("/api/sessions/{session_id}")
@@ -361,6 +363,14 @@ class WebChannel(BaseChannel):
         if STATIC_DIR.exists():
             self.app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
+        # Mount workspace/images for generated images
+        from nanobot.config.loader import load_config
+        config = load_config()
+        workspace = Path(config.agents.defaults.workspace).expanduser()
+        images_dir = workspace / "images"
+        if images_dir.exists():
+            self.app.mount("/images", StaticFiles(directory=images_dir), name="images")
+
     async def _handle_get_models(self, websocket: WebSocket) -> None:
         """Handle get available models request."""
         models = [
@@ -444,15 +454,22 @@ class WebChannel(BaseChannel):
                     if "timestamp" not in log_data or log_data["timestamp"] == 0:
                         log_data["timestamp"] = time.time()
 
-                    asyncio.create_task(websocket.send_json({
+                    # Use create_task but don't await it (fire and forget)
+                    message = {
                         "type": "log",
                         "log": log_data,
                         "session_id": session_id,
-                    }))
-                except Exception:
-                    pass  # Ignore send errors
+                    }
+                    logger.info(f"[WebChannel] Sending log to client: {log_data.get('message', '')[:50]}")
+                    task = asyncio.create_task(websocket.send_json(message))
+                    # Store reference to prevent garbage collection
+                    self._pending_tasks.add(task)
+                    task.add_done_callback(lambda t: self._pending_tasks.discard(t))
+                except Exception as e:
+                    logger.warning(f"[WebChannel] Failed to send log: {e}")
 
             AgentLoop.set_log_callback(send_log_to_client)
+            logger.info("[WebChannel] Log callback set up for session %s", session_id)
 
             response = await self.agent.process_direct(
                 content=message or "[图片]",  # Use placeholder if only image
@@ -465,6 +482,7 @@ class WebChannel(BaseChannel):
 
             # Clear log callback
             AgentLoop.set_log_callback(None)
+            logger.info("[WebChannel] Log callback cleared")
             logger.info(f"[WebChannel] Got response from agent: {response[:50]}...")
 
             # Send response in chunks for streaming effect

@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import re
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -18,6 +19,27 @@ from nanobot.agent.tools.web import WebSearchTool, WebFetchTool
 from nanobot.agent.tools.message import MessageTool
 from nanobot.agent.tools.spawn import SpawnTool
 from nanobot.agent.tools.cron import CronTool
+
+
+def truncate_log_content(content: str, max_length: int = 100) -> str:
+    """Truncate long content for logging, handling base64 data specially."""
+    if not content:
+        return content
+
+    # Check for base64 patterns and truncate them
+    # Match data URLs (data:image/...;base64,...) or raw base64 strings
+    base64_pattern = r'(data:image/[^;]+;base64,)[A-Za-z0-9+/=]+'
+    content = re.sub(base64_pattern, r'\1[base64 truncated]', content)
+
+    # Also handle raw base64 strings that are very long (likely image data)
+    long_base64_pattern = r'([A-Za-z0-9+/]{200,}=*)'
+    content = re.sub(long_base64_pattern, '[base64 data truncated]', content)
+
+    # Truncate remaining content if still too long
+    if len(content) > max_length:
+        return content[:max_length] + "..."
+
+    return content
 from nanobot.agent.tools.mcp import MCPTool, MiniMaxMCPTool, discover_mcp_tools
 from nanobot.agent.subagent import SubagentManager
 from nanobot.session.manager import SessionManager
@@ -45,12 +67,15 @@ class AgentLoop:
     @classmethod
     def send_log(cls, level: str, category: str, message: str, details: str | None = None):
         """Send a log entry to clients if callback is set."""
+        truncated_message = truncate_log_content(message, 50)
+        truncated_details = truncate_log_content(details, 100) if details else None
+        logger.info(f"[AgentLoop.send_log] level={level}, message={truncated_message}, callback={cls._log_callback is not None}")
         if cls._log_callback:
             cls._log_callback({
                 "level": level,
                 "category": category,
-                "message": message,
-                "details": details,
+                "message": truncated_message,
+                "details": truncated_details,
                 "timestamp": asyncio.get_event_loop().time() if asyncio.get_event_loop().is_running() else 0,
             })
 
@@ -65,6 +90,7 @@ class AgentLoop:
         exec_config: "ExecToolConfig | None" = None,
         cron_service: "CronService | None" = None,
         providers: dict[str, LLMProvider] | None = None,
+        sessions: "SessionManager | None" = None,
     ):
         from nanobot.config.schema import ExecToolConfig
         from nanobot.cron.service import CronService
@@ -81,7 +107,8 @@ class AgentLoop:
         self._providers = providers or {"default": provider}
 
         self.context = ContextBuilder(workspace)
-        self.sessions = SessionManager(workspace)
+        # Use provided session manager or create new one
+        self.sessions = sessions or SessionManager(workspace)
         self.tools = ToolRegistry()
         self.subagents = SubagentManager(
             provider=provider,
@@ -155,6 +182,11 @@ class AgentLoop:
         # Cron tool (for scheduling)
         if self.cron_service:
             self.tools.register(CronTool(self.cron_service))
+
+        # Image generation tools (ZhipuAI)
+        from nanobot.skills.image_generation.tool import ImageGenerationTool, ListImageModelsTool  # type: ignore
+        self.tools.register(ImageGenerationTool())
+        self.tools.register(ListImageModelsTool())
 
         # MCP tools (for external MCP servers)
         self._register_mcp_tools()
@@ -352,10 +384,20 @@ class AgentLoop:
                             # For URLs, pass as-is
                             image_source = image_data
 
+                        # Log tool execution
+                        args_str = json.dumps({"prompt": msg.content or "描述这张图片", "image_source": "[base64 data]"})
+                        logger.debug(f"Executing tool: minimax_understand_image with arguments: {args_str}")
+                        self.send_log("tool", "tool", f"执行工具: minimax_understand_image", f"参数: {truncate_log_content(args_str, 100)}")
+
                         result = await self.tools.execute("minimax_understand_image", {
                             "prompt": msg.content or "描述这张图片",
                             "image_source": image_source
                         })
+
+                        # Log result
+                        result_preview = truncate_log_content(str(result), 100)
+                        self.send_log("success", "tool", f"工具完成: minimax_understand_image", f"结果: {result_preview}")
+
                         # Save result to session and return
                         session.add_message("user", f"[图片] {msg.content}" if msg.content else "[图片]")
                         session.add_message("assistant", result)
@@ -381,9 +423,19 @@ class AgentLoop:
         if is_search_query and self.tools.has("minimax_web_search"):
             logger.info(f"[AgentLoop] Auto-routing search query to minimax_web_search")
             try:
+                # Log tool execution
+                args_str = json.dumps({"query": msg.content})
+                logger.debug(f"Executing tool: minimax_web_search with arguments: {args_str}")
+                self.send_log("tool", "tool", f"执行工具: minimax_web_search", f"参数: {truncate_log_content(args_str, 100)}")
+
                 result = await self.tools.execute("minimax_web_search", {
                     "query": msg.content
                 })
+
+                # Log result
+                result_preview = truncate_log_content(str(result), 100)
+                self.send_log("success", "tool", f"工具完成: minimax_web_search", f"结果: {result_preview}")
+
                 # Save result to session and return
                 session.add_message("user", msg.content)
                 session.add_message("assistant", result)
@@ -446,10 +498,10 @@ class AgentLoop:
                 # Execute tools
                 for tool_call in response.tool_calls:
                     args_str = json.dumps(tool_call.arguments)
-                    logger.debug(f"Executing tool: {tool_call.name} with arguments: {args_str}")
-                    self.send_log("tool", "tool", f"执行工具: {tool_call.name}", f"参数: {args_str[:200]}..." if len(args_str) > 200 else f"参数: {args_str}")
+                    logger.debug(f"Executing tool: {tool_call.name} with arguments: {truncate_log_content(args_str, 200)}")
+                    self.send_log("tool", "tool", f"执行工具: {tool_call.name}", f"参数: {truncate_log_content(args_str, 100)}")
                     result = await self.tools.execute(tool_call.name, tool_call.arguments)
-                    result_preview = str(result)[:150] + "..." if len(str(result)) > 150 else str(result)
+                    result_preview = truncate_log_content(str(result), 100)
                     self.send_log("success", "tool", f"工具完成: {tool_call.name}", f"结果: {result_preview}")
                     messages = self.context.add_tool_result(
                         messages, tool_call.id, tool_call.name, result
@@ -468,6 +520,7 @@ class AgentLoop:
         session.add_message("user", msg.content)
         session.add_message("assistant", final_content)
         self.sessions.save(session)
+        logger.info(f"[AgentLoop] Session saved: {session.key}, messages: {len(session.messages)}")
         
         return OutboundMessage(
             channel=msg.channel,
@@ -563,10 +616,10 @@ class AgentLoop:
                 messages = self.context.add_assistant_message(
                     messages, response.content, tool_call_dicts
                 )
-                
+
                 for tool_call in response.tool_calls:
                     args_str = json.dumps(tool_call.arguments)
-                    logger.debug(f"Executing tool: {tool_call.name} with arguments: {args_str}")
+                    logger.debug(f"Executing tool: {tool_call.name} with arguments: {truncate_log_content(args_str, 200)}")
                     result = await self.tools.execute(tool_call.name, tool_call.arguments)
                     messages = self.context.add_tool_result(
                         messages, tool_call.id, tool_call.name, result
